@@ -15,6 +15,8 @@ whisper:
 
 cuts:
   max_pause: 0.45            # pauses longer than this (seconds) are cut down
+  pause_threshold: 0.55      # silences longer than this are shortened ...
+  keep_pause: 0.30           # ... to this, a natural breath
   pad_before: 0.08           # speech kept before the first word of a run
   pad_after: 0.14            # speech kept after the last word of a run
   min_cut: 0.12              # cuts shorter than this are skipped (avoids choppiness)
@@ -28,6 +30,12 @@ cuts:
   stutters: true             # "pa- pattern", "அ அது"
   max_repeat_ngram: 3
   repeat_max_gap: 1.0
+  # False starts: he begins a sentence, stops (even mid-word) and says it again.
+  # The aborted attempt is cut. policy: normal (cut the sure ones, list the rest for review)
+  # | aggressive (also cut the uncertain ones) | off
+  restart:
+    enabled: true
+    policy: normal
 
 zoom:
   enabled: true

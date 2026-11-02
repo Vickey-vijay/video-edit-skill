@@ -1,0 +1,29 @@
+# ITC: why it has not moved, and a long-term view. All times are SOURCE seconds (they survive re-cutting).
+theme: market
+themes:
+  - {from: 0,   to: 66,  theme: market}   # price action and his earlier trade
+  - {from: 66,  to: 82,  theme: studio}   # the business itself
+  - {from: 82,  to: 106, theme: gold}     # dividends: the money part
+  - {from: 106, to: 140, theme: market}   # trading approach and the lead into part 2
+
+hook:
+  behind: ITC
+  lines: ["STUCK AT ₹260", "FOR 4 YEARS"]
+  accent: 1
+  at_edit: 0.1
+  dur: 3.3
+
+stats:
+  - {at: 19.8, kicker: "2022", value: "₹260", side: left, dur: 2.6}
+  - {at: 22.6, kicker: "2026", value: "₹260", side: right, dur: 2.4}
+  - {at: 49.3, kicker: "BOUGHT AT", value: "₹230", side: left, dur: 2.6}
+  - {at: 54.0, kicker: "EXITED AT", value: "₹470", sub: "ABOUT 2X", side: right, dur: 2.8}
+  - {at: 98.6, kicker: "DIVIDEND / YEAR", value: "₹14-15K", side: left, dur: 2.4}
+  - {at: 101.6, kicker: "IN 4 YEARS", value: "₹60K", side: right, dur: 2.2}
+
+tags:
+  - {at: 58.5, text: "DO YOUR OWN ANALYSIS", dur: 2.8}
+  - {at: 64.8, text: "NOT JUST CIGARETTES", dur: 2.4}
+  - {at: 126.8, text: "BUY THE BOTTOM, SELL THE TOP", dur: 2.6}
+
+cta: {text: "BUY OR AVOID?", sub: "Next: the techno-fundamentals", dur: 2.4}

@@ -399,8 +399,59 @@ def plan_broll(nwords, library, b, total):
 
 # ---------------------------------------------------------------- main
 
+def subtract(segs, ranges, min_len=0.25):
+    """Remove time ranges from kept segments."""
+    out = [list(s) for s in segs]
+    for a, b in sorted(ranges):
+        nxt = []
+        for s, e in out:
+            if b <= s or a >= e:
+                nxt.append([s, e])
+                continue
+            if a - s >= min_len:
+                nxt.append([s, a])
+            if e - b >= min_len:
+                nxt.append([b, e])
+        out = nxt
+    return out
+
+
+def snap_to_phrases(segs, ph, words, removed):
+    """A kept piece that starts or ends inside a sound burst should take the whole burst,
+    unless a removed word sits in the part being added (a stutter cut inside a phrase)."""
+    def removed_between(a, b):
+        return any(i in removed and a - 0.02 <= (w["start"] + w["end"]) / 2 <= b + 0.02
+                   for i, w in enumerate(words))
+
+    out = []
+    for s, e in segs:
+        for p in ph.items:
+            if p["on"] + 0.05 < s < p["off"] and s - p["on"] <= 0.8 and not removed_between(p["on"] - 0.05, s):
+                s = p["on"] - 0.06
+            if p["on"] < e < p["off"] - 0.05 and p["off"] - e <= 0.5 and not removed_between(e, p["off"]):
+                e = p["off"] + 0.10
+        out.append([max(0.0, s), e])
+    return out
+
+
+def make_cues(ph, tl, words, removed):
+    """The speech that survives the edit, phrase by phrase, in edited time. These are the
+    units that get an English caption: id, when it is on screen, and what he said (Tamil)."""
+    cues = []
+    for p in ph.items:
+        for s0, e0 in tl.src:
+            a, b = max(p["on"], s0), min(p["off"], e0)
+            if b - a < 0.25:
+                continue
+            txt = " ".join(w["text"] for i, w in enumerate(words)
+                           if i not in removed and a - 0.05 <= (w["start"] + w["end"]) / 2 <= b + 0.05)
+            cues.append({"id": len(cues) + 1, "t0": round(tl.to_new(a), 3), "t1": round(tl.to_new(b), 3),
+                         "src0": round(a, 3), "src1": round(b, 3), "tamil": txt})
+    return cues
+
+
 def make_plan(transcript, wav16k, info, cfg, layout, motion, library, title):
-    c, fps = cfg["cuts"], 30
+    c, fps = cfg["cuts"], info.get("fps_out", 30)
     words = merge_numbers([dict(w) for w in transcript["words"]])
     apply_corrections(words, cfg.get("corrections"))
     env = envelope(wav16k)
@@ -411,8 +462,25 @@ def make_plan(transcript, wav16k, info, cfg, layout, motion, library, title):
     levels = {"speech": speech, "noise": noise, "floor": max(noise + 6, speech - 26)}
     log(f"levels: speech {speech:.1f} dB, noise {noise:.1f} dB, floor {levels['floor']:.1f} dB")
 
+    from .acoustic import Phrases, load_wav
+    from . import restarts as R
+    ph = Phrases(load_wav(wav16k), env, levels["floor"])
+    R.fix_word_times(words, ph)
     removed = mark_removals(words, c, cfg["fillers"])
+    decisions = cfg.get("decisions") or {}
+    cands = R.find_restarts(words, removed, ph, cfg)
+    R.decide(cands, c.get("restart", {}).get("policy", "normal"), decisions.get("restarts"), duration)
+    ranges = R.cut_ranges(cands, ph, c["pad_before"], c["pad_after"], decisions) + R.manual_ranges(decisions, env)
+    # long pauses, found from the audio itself (Whisper's timestamps drift): leave a natural breath
+    keep = c.get("keep_pause", 0.30)
+    pauses = [(a + keep / 2, b - keep / 2) for a, b in ph.silences if b - a > c.get("pause_threshold", 0.55)]
+    for i, w in enumerate(words):
+        mid = (w["start"] + w["end"]) / 2
+        if any(a <= mid <= b for a, b in ranges):
+            removed.setdefault(i, "restart")
     raw, kept_noise = build_segments(words, removed, env, duration, c, levels)
+    raw = snap_to_phrases(subtract(raw, ranges), ph, words, removed)
+    raw = subtract(raw, ranges + pauses)
     frames = snap(raw, fps, duration)
     tl = Timeline(frames, fps)
 
@@ -470,7 +538,12 @@ def make_plan(transcript, wav16k, info, cfg, layout, motion, library, title):
              "removed_pct": round(100 * (duration - tl.duration) / max(duration, 1e-6), 1),
              "cuts": len(cuts), "removed_words": reasons, "zooms": len(zooms), "broll": len(broll),
              "captions": len(groups), "kept_untranscribed": len(kept_noise)}
-    return {"version": 1, "fps": fps, "title": title, "language": transcript.get("language"),
+    restarts = [{k: r[k] for k in ("id", "level", "decision", "score", "cov", "cost", "truncated", "unique",
+                                    "t0", "t1", "b0", "removed_text", "kept_text") if k in r} for r in cands]
+    phrases = [{"i": n, "on": p["on"], "off": p["off"], "text": p.get("text", "")} for n, p in enumerate(ph.items)]
+    return {"version": 2, "fps": fps, "title": title, "language": transcript.get("language"),
+            "restarts": restarts, "phrases": phrases, "cut_ranges": [list(r) for r in ranges],
+            "cues": make_cues(ph, tl, words, removed),
             "info": info, "levels": levels, "layout": layout, "segments": frames,
             "duration": round(tl.duration, 3), "cuts": cuts, "words": words,
             "captions": groups, "zooms": zooms, "broll": broll, "stats": stats}

@@ -42,11 +42,22 @@ def probe(path):
         raise ValueError(f"{path} has no video stream")
     num, den = (v.get("avg_frame_rate") or v["r_frame_rate"]).split("/")
     fps = float(num) / float(den) if float(den) else 30.0
+    w, h = int(v["width"]), int(v["height"])
+    rot = 0
+    for sd in v.get("side_data_list", []):
+        rot = int(sd.get("rotation", rot) or 0)
+    rot = int(v.get("tags", {}).get("rotate", rot) or rot)
+    if abs(rot) % 180 == 90:               # phone video: stored sideways, shown upright
+        w, h = h, w
+    # keep the cadence of the footage (phones record 24-30 fps, often variable)
+    fps_out = min((24, 25, 30), key=lambda f: abs(f - fps)) if 23.0 <= fps <= 31.0 else 30
     return {
         "duration": float(data["format"]["duration"]),
-        "width": int(v["width"]),
-        "height": int(v["height"]),
+        "width": w,
+        "height": h,
+        "rotation": rot,
         "fps": fps,
+        "fps_out": fps_out,
         "video_start": float(v.get("start_time", 0) or 0),
         "audio_start": float(a.get("start_time", 0) or 0) if a else 0.0,
         "has_audio": a is not None,

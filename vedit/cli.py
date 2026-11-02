@@ -68,8 +68,14 @@ def resolve_layout(video, info, cfg, wd):
     return layout
 
 
+def load_decisions(wd):
+    p = wd / "decisions.json"
+    return load_json(p) if p.exists() else {}
+
+
 def build_plan(video, cfg, wd):
     from .plan import make_plan
+    cfg["decisions"] = load_decisions(wd)
     from .transcribe import extract_audio_16k, transcribe
     info = probe(video)
     a16 = extract_audio_16k(video, wd / "audio16k.wav")
@@ -93,11 +99,17 @@ def render_plan(plan, cfg, wd, only=None):
     from .render import contact_sheet, cut_media, master_audio, render_output, split_parts
     from .report import write_report
     from .captions import write_srt
+    from . import reel
     video = Path(plan["source"])
     stem = video.stem
     out_dir = OUT / stem
     out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
+    if reel.is_reel(plan):                       # vertical phone footage: the Reel / Short pipeline
+        out = reel.render_reel(plan, cfg, wd, out_dir)
+        save_json(out_dir / "plan.json", plan)
+        log(f"done in {time.time() - t0:.0f}s -> {out}")
+        return {"reel": [out]}
     cut_v, cut_a = cut_media(video, plan, wd, cfg)
     audio = master_audio(cut_a, wd, cfg)
     results = {}
@@ -149,6 +161,46 @@ def cmd_layout(a):
     wd = work_dir(video)
     resolve_layout(video, probe(video), cfg, wd)
     print(wd / "layout_preview.png")
+
+
+def cmd_restarts(a):
+    """Show every speech phrase and every false-start candidate, with the evidence."""
+    video = Path(a.video).resolve()
+    wd = work_dir(video)
+    plan = load_json(wd / "plan.json")
+    s = plan["stats"]
+    print(f"{s['source_duration']}s -> {s['edited_duration']}s (-{s['removed_pct']}%)   decisions: {wd / 'decisions.json'}")
+    print("\nPHRASES  (P#  start-end  text; * = cut)")
+    ranges = plan["cut_ranges"]
+    for p in plan["phrases"]:
+        mark = "*" if any(x0 - 0.05 <= p["on"] and p["off"] <= x1 + 0.3 for x0, x1 in ranges) else " "
+        print(f" {mark}P{p['i']:02d} {p['on']:7.2f}-{p['off']:7.2f}  {p['text'][:100]}")
+    print("\nCANDIDATES  (level decision | score, text coverage, audio similarity cost [lower = more alike])")
+    for r in plan["restarts"]:
+        print(f"#{r['id']:2d} {r['level']:6s} {r['decision']:4s} | score {r['score']:.1f} cov {r['cov']:.2f} "
+              f"cost {r['cost']:.0f} {'TRUNCATED ' if r['truncated'] else ''}unique {r['unique']}  [{r['t0']:.1f}-{r['t1']:.1f}]")
+        print(f"      earlier: {r['removed_text'][:90]}")
+        print(f"      restart: {r['kept_text'][:90]}")
+    print("\nCut ranges applied (source seconds):", ", ".join(f"{a:.2f}-{b:.2f}" for a, b in ranges) or "none")
+
+
+def cmd_decide(a):
+    """Record review decisions for a video; run `run --stop-after plan` again to apply them."""
+    video = Path(a.video).resolve()
+    wd = work_dir(video)
+    d = {} if a.clear else load_decisions(wd)
+    r = d.setdefault("restarts", {})
+    for i in a.cut:
+        r[str(i)] = "cut"
+    for i in a.keep:
+        r[str(i)] = "keep"
+    d.setdefault("cut_at", []).extend(a.cut_at)
+    d.setdefault("keep_at", []).extend(a.keep_at)
+    for spec in a.cut_range:
+        t0, _, t1 = spec.partition("-")
+        d.setdefault("cuts", []).append({"t0": float(t0), "t1": float(t1)})
+    save_json(wd / "decisions.json", d)
+    log(f"saved {wd / 'decisions.json'}: {d}")
 
 
 def cmd_review(a):
@@ -207,6 +259,99 @@ def cmd_fix(a):
         plan["title"] = a.title
     save_json(path, plan)
     log(f"updated {path}")
+
+
+def cmd_qa(a):
+    """Listen to the edit: transcribe the edited audio and look for false starts that survived."""
+    import numpy as np
+    from . import restarts as R
+    from .acoustic import Phrases, load_wav
+    from .plan import HOP, envelope, merge_numbers
+    from .render import cut_media
+    from .transcribe import extract_audio_16k, transcribe
+    from .util import run
+    video = Path(a.video).resolve()
+    cfg = load_config(video, a.config, parse_set(a.set))
+    wd = work_dir(video)
+    plan = load_json(wd / "plan.json")
+    cut_media(video, plan, wd, cfg)
+    qa = wd / "qa"
+    qa.mkdir(exist_ok=True)
+    wav = qa / "edited16k.wav"
+    run(["ffmpeg", "-y", "-v", "error", "-i", wd / "cut_audio.wav", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav])
+    tr = transcribe(wav, cfg["whisper"], qa / "transcript.json")
+    words = merge_numbers([dict(w) for w in tr["words"]])
+    env = envelope(wav)
+    inw = np.concatenate([env[int(w["start"] / HOP):int(w["end"] / HOP) + 1] for w in words])
+    floor = max(float(np.percentile(env, 10)) + 6, float(np.median(inw)) - 26)
+    ph = Phrases(load_wav(wav), env, floor)
+    R.fix_word_times(words, ph)
+    cands = R.find_restarts(words, {}, ph, cfg)
+    R.decide(cands, "normal", {}, len(env) * HOP)
+    print(f"EDITED AUDIO {len(env) * HOP:.1f}s, {len(ph.items)} phrases")
+    for p in ph.items:
+        print(f"  {p['on']:6.1f}-{p['off']:6.1f}  {p.get('text', '')[:110]}")
+    longest = max((b - a for a, b in ph.silences), default=0)
+    print(f"longest pause left in the edit: {longest:.2f}s")
+    print(f"RESIDUAL FALSE-START CANDIDATES: {len(cands)}")
+    for r in cands:
+        print(f"  #{r['id']} {r['level']} score {r['score']:.1f} cost {r['cost']:.0f} [{r['t0']:.1f}-{r['t1']:.1f}] "
+              f"earlier: {r['removed_text'][:60]} | restart: {r['kept_text'][:60]}")
+
+
+def cmd_cues(a):
+    """Worksheet for the English captions: every kept phrase in edited time, with what he said."""
+    video = Path(a.video).resolve()
+    wd = work_dir(video)
+    plan = load_json(wd / "plan.json")
+    qa = wd / "qa" / "transcript.json"
+    alt = load_json(qa)["words"] if qa.exists() else []
+    en = load_json(wd / "captions_en.json") if (wd / "captions_en.json").exists() else {}
+    print(f"{len(plan['cues'])} cues, edited length {plan['duration']:.1f}s. Write one English line per cue "
+          f"(id|text) and run: translate VIDEO FILE\n")
+    for c in plan["cues"]:
+        print(f"C{c['id']:<3d} edit {c['t0']:6.1f}-{c['t1']:6.1f}  src {c['src0']:6.1f}-{c['src1']:6.1f}"
+              f"{'   EN: ' + en[str(c['id'])] if str(c['id']) in en else ''}")
+        print(f"      tamil: {c['tamil'][:160]}")
+        heard = " ".join(w["text"] for w in alt if c["t0"] - 0.1 <= (w["start"] + w["end"]) / 2 <= c["t1"] + 0.1)
+        if heard:
+            print(f"      2nd decode: {heard[:160]}")
+
+
+def cmd_translate(a):
+    """Store English captions: a text file of 'id|English' lines (or a JSON object)."""
+    video = Path(a.video).resolve()
+    wd = work_dir(video)
+    path = wd / "captions_en.json"
+    en = load_json(path) if path.exists() else {}
+    raw = Path(a.file).read_text(encoding="utf-8").strip()
+    if raw.startswith("{"):
+        import json
+        en.update({str(k): v for k, v in json.loads(raw).items()})
+    else:
+        for line in raw.splitlines():
+            if "|" in line and not line.lstrip().startswith("#"):
+                k, _, v = line.partition("|")
+                en[k.strip().lstrip("Cc")] = v.strip()
+    save_json(path, en)
+    plan = load_json(wd / "plan.json")
+    missing = [c["id"] for c in plan["cues"] if str(c["id"]) not in en and c["tamil"].strip()]
+    log(f"{len(en)} English captions saved to {path}; cues still without one: {missing}")
+
+
+def cmd_preview(a):
+    """Render single edited-time frames to PNG so the look can be judged without a full render."""
+    from . import reel
+    video = Path(a.video).resolve()
+    cfg = load_config(video, a.config, parse_set(a.set))
+    wd = work_dir(video)
+    plan = load_json(wd / "plan.json")
+    out_dir = OUT / video.stem
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for t in a.t:
+        out = out_dir / f"preview_{t:06.2f}.png"
+        reel.preview(plan, cfg, wd, t, out)
+        print(out)
 
 
 def cmd_cards(a):
@@ -275,6 +420,40 @@ def main(argv=None):
     lo.add_argument("video")
     common(lo)
     lo.set_defaults(fn=cmd_layout)
+
+    rs = sub.add_parser("restarts", help="list speech phrases and false-start candidates with their evidence")
+    rs.add_argument("video")
+    rs.set_defaults(fn=cmd_restarts)
+
+    qa = sub.add_parser("qa", help="re-transcribe the edited audio and look for false starts that survived")
+    qa.add_argument("video")
+    common(qa)
+    qa.set_defaults(fn=cmd_qa)
+
+    cu = sub.add_parser("cues", help="worksheet of kept phrases to translate into English captions")
+    cu.add_argument("video")
+    cu.set_defaults(fn=cmd_cues)
+
+    tr = sub.add_parser("translate", help="store English captions from a file of 'id|text' lines")
+    tr.add_argument("video")
+    tr.add_argument("file")
+    tr.set_defaults(fn=cmd_translate)
+
+    pv = sub.add_parser("preview", help="render single frames (edited seconds) of the reel to PNG")
+    pv.add_argument("video")
+    pv.add_argument("t", type=float, nargs="+")
+    common(pv)
+    pv.set_defaults(fn=cmd_preview)
+
+    dc = sub.add_parser("decide", help="record review decisions (cut/keep candidates, cut phrases or ranges)")
+    dc.add_argument("video")
+    dc.add_argument("--cut", type=int, action="append", default=[], help="cut candidate #")
+    dc.add_argument("--keep", type=int, action="append", default=[], help="keep candidate #")
+    dc.add_argument("--cut-at", type=float, action="append", default=[], help="cut the phrase containing this second")
+    dc.add_argument("--keep-at", type=float, action="append", default=[], help="keep the phrase containing this second")
+    dc.add_argument("--cut-range", action="append", default=[], help="cut T0-T1 seconds (snapped into pauses)")
+    dc.add_argument("--clear", action="store_true")
+    dc.set_defaults(fn=cmd_decide)
 
     rv = sub.add_parser("review", help="print the plan: numbered caption words, cuts, zooms, B-roll")
     rv.add_argument("video")
