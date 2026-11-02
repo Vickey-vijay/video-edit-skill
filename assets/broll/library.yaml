@@ -1,0 +1,89 @@
+# B-roll library. When a keyword is spoken, the matching item is shown as a
+# card next to the screen share (never over the chart).
+#
+# kind: pattern | fib | waves  -> card drawn in the brand style (python -m vedit cards)
+# kind: image | video          -> your own file; put it in assets/broll/ and set file:
+#
+# Ratios on the pattern cards follow the definitions in Nagarajan's
+# HARMONIC PATTERN.pdf as seen in the class recordings. Check them with him
+# before publishing and edit the chips here if his teaching differs.
+
+items:
+  - id: gartley
+    kind: pattern
+    title: Gartley
+    keywords: [gartley, gartly, கார்ட்லி, கார்ட்லீ]
+    points: [[0, 0], [1, 1], [2, 0.382], [3, 0.764], [4.2, 0.214]]
+    chips: ["AB 0.618 XA", "BC 0.382 / 0.886", "CD 1.272 / 1.618"]
+
+  - id: bat
+    kind: pattern
+    title: Bat
+    keywords: [bat pattern, பேட் பேட்டர்ன்]
+    points: [[0, 0], [1, 1], [2, 0.5], [3, 0.81], [4.3, 0.114]]
+    chips: ["AB 0.382 / 0.5 XA", "BC 0.382 / 0.886 AB"]
+
+  - id: butterfly
+    kind: pattern
+    title: Butterfly
+    keywords: [butterfly, பட்டர்பிளை, பட்டர்ஃப்ளை]
+    points: [[0, 0], [1, 1], [2, 0.214], [3, 0.7], [4.4, -0.27]]
+    chips: ["AB 0.786 XA", "BC 0.382 / 0.886", "CD 1.618 / 2.618"]
+
+  - id: crab
+    kind: pattern
+    title: Crab
+    keywords: [crab, கிராப், க்ராப்]
+    points: [[0, 0], [1, 1], [2, 0.382], [3, 0.764], [4.6, -0.618]]
+    chips: ["AB 0.382 / 0.618", "BC 0.382 / 0.886", "CD 2.24 / 3.618"]
+
+  - id: cypher
+    kind: pattern
+    title: Cypher
+    keywords: [cypher, cipher, சைபர், சைஃபர்]
+    points: [[0, 0], [1, 1], [2, 0.5], [3, 1.13], [4.2, 0.24]]
+    chips: ["AB 0.382 / 0.618", "BC 1.134 / 1.414", "CD 1.414 / 2.0"]
+
+  - id: abcd
+    kind: pattern
+    title: AB = CD
+    label: Harmonic pattern
+    names: [A, B, C, D]
+    keywords: [abcd, a b c d, ab cd, ab equal to cd]
+    points: [[0, 1], [1, 0.4], [2, 0.77], [3.1, 0.17]]
+    chips: ["BC 0.618–0.786 AB", "CD 1.272–1.618 BC"]
+
+  - id: harmonic
+    kind: pattern
+    title: Harmonic pattern
+    label: XABCD structure
+    keywords: [harmonic pattern, harmonic patterns, ஹார்மோனிக் பேட்டர்ன்]
+    points: [[0, 0], [1, 1], [2, 0.382], [3, 0.764], [4.2, 0.214]]
+    chips: ["5 points", "4 legs", "Fibonacci ratios"]
+
+  - id: fibonacci
+    kind: fib
+    title: Fibonacci retracement
+    label: Golden ratio
+    key: 0.618
+    keywords: [fibonacci, fibonacci retracement, retracement, golden ratio, ஃபிபோனச்சி, ரீட்ரேஸ்மென்ட்]
+    chips: ["0.618 = golden ratio", "1.618 extension"]
+
+  - id: elliott_impulse
+    kind: waves
+    title: Impulse wave
+    label: Elliott wave
+    keywords: [impulse, impulsive, impulse wave, five waves, இம்பல்ஸ்]
+    points: [[0, 0], [1, 0.45], [2, 0.22], [3.4, 0.95], [4.2, 0.68], [5, 1.15]]
+    names: ["", "1", "2", "3", "4", "5"]
+    chips: ["3 impulsive", "2 corrective"]
+
+  - id: elliott_abc
+    kind: waves
+    title: ABC correction
+    label: Elliott wave
+    up_odd: false
+    keywords: [abc correction, corrective, correction, கரெக்ஷன்]
+    points: [[0, 1], [1, 0.45], [2, 0.75], [3, 0.1]]
+    names: ["", "A", "B", "C"]
+    chips: ["3 waves against the trend"]

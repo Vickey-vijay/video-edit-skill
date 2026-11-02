@@ -1,0 +1,6 @@
+# Google Meet recording where Nagarajan shares his whole screen with Edge open
+# (TradingView / PDF): hide Edge's tab + address bar at the top and the Windows
+# taskbar at the bottom. Fractions of the shared-screen rectangle at 1080p.
+# Use with: python -m vedit run VIDEO --config presets/meet-edge-share.yaml
+layout:
+  screen_trim: [0.093, 0.062, 0, 0]

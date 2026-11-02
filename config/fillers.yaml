@@ -1,0 +1,75 @@
+# Words cut by the filler pass. Matching ignores case and punctuation.
+# hard: always cut.  soft: cut only according to cuts.soft_fillers
+# (isolated = only when said on their own between pauses).
+
+hard:
+  # English hesitations
+  - um
+  - umm
+  - ummm
+  - uh
+  - uhh
+  - uhm
+  - uhmm
+  - hmm
+  - hmmm
+  - mm
+  - mmm
+  - ah
+  - ahh
+  - aah
+  - er
+  - erm
+  - eh
+  - ehh
+  # Tamil hesitations (Tamil script)
+  - ம்
+  - ம்ம்
+  - ம்ம்ம்
+  - ஹ்ம்
+  - ஆங்
+  - அ
+  - உம்
+  # Not listed on purpose: ஆ / ஏ / ஓ. In "61.8 ஆ இருந்தா" (if it's 61.8) ஆ is
+  # grammar, not hesitation, and Whisper writes both the same way.
+
+soft:
+  - so
+  - basically
+  - actually
+  - like
+  - okay
+  - ok
+  - right
+  - you know
+  - i mean
+  - kind of
+  - அது வந்து
+  - வந்து
+  - அந்த
+  - சரியா
+  - சரி
+  - ஓகே
+  - என்னன்னா
+  - பாத்தீங்கன்னா
+  - அப்புறம்
+  - adhu vandhu
+  - vandhu
+  - sariya
+  - ennanna
+
+# Doubled words that are real speech, not stutters (Tamil/Indian-English reduplication).
+repeat_whitelist:
+  - மெல்ல
+  - சின்ன
+  - கொஞ்சம்
+  - slowly
+  - very
+  - bye
+  - "no"
+  - "yes"
+
+# Short complete words that must not be treated as a stutter of the next word
+# ("so something", "a about").
+stutter_stoplist: [a, i, in, is, it, so, to, "on", at, an, as, be, he, we, me, do, go, "no",
+                   of, "or", us, the, this, that, all, can, for, and, you, are, not, now, up]

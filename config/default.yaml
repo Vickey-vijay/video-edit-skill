@@ -1,0 +1,104 @@
+# Default settings for every upload. Override per video with a sidecar file
+# next to the video (same name, .yaml), with --config, or with --set key=value.
+
+whisper:
+  model: large-v3            # large-v3 (best for Tamil) | large-v3-turbo | medium | small
+  # Nagarajan speaks Tamil with English trading terms. "auto" can pick English and
+  # then Whisper translates instead of transcribing, so Tamil is the default.
+  language: ta               # ta | en | auto
+  device: cuda               # cuda | cpu (falls back to cpu automatically)
+  compute_type: int8_float16 # cpu fallback uses int8
+  beam_size: 5
+  # Priming text: Tanglish in the style he speaks, with fillers and a repeat,
+  # so Whisper keeps English terms in English and writes fillers instead of tidying them away.
+  initial_prompt: "ம்ம், இது harmonic patterns class. அது வந்து, Fibonacci retracement, Gartley, Bat, Butterfly, Crab, Cypher patterns இருக்கு. okay பா, இந்த இந்த pattern பாருங்க, சரியா?"
+
+cuts:
+  max_pause: 0.45            # pauses longer than this (seconds) are cut down
+  pad_before: 0.08           # speech kept before the first word of a run
+  pad_after: 0.14            # speech kept after the last word of a run
+  min_cut: 0.12              # cuts shorter than this are skipped (avoids choppiness)
+  min_segment: 0.25          # kept pieces shorter than this are dropped unless they hold a word
+  keep_untranscribed_speech: 0.7   # loud stretches Whisper missed, longer than this, are kept
+  trim_edges: true           # cut dead air before the first and after the last word
+  fade_ms: 6                 # micro fade at every audio cut (prevents clicks)
+  fillers: true              # hard fillers: um, uh, ம்ம் ...
+  soft_fillers: isolated     # off | isolated (only when said alone between pauses) | all
+  repeats: true              # "the the", "இந்த இந்த", "so we so we"
+  stutters: true             # "pa- pattern", "அ அது"
+  max_repeat_ngram: 3
+  repeat_max_gap: 1.0
+
+zoom:
+  enabled: true
+  punch_in: 1.14             # zoom level on emphasis words
+  ease_in: 0.35
+  ease_out: 0.55
+  hold_min: 1.4
+  hold_max: 3.5
+  min_interval: 6.0          # seconds between zoom events
+  max_per_minute: 5
+  zoom_out_reveal: true      # start zoomed in and pull out at the opening and after topic breaks
+  reveal_from: 1.18
+  reveal_duration: 0.9
+  topic_break_gap: 2.0       # a cut pause longer than this counts as a topic break
+  focus: auto                # auto (follows cursor/drawing activity) | center
+  on_cuts: auto              # alternate punch level on jump cuts: auto (only for full-frame talking head) | true | false
+  cut_punch: 1.07
+
+captions:
+  enabled: true
+  max_words: 4
+  max_chars: 24              # visible characters (Tamil vowel signs don't count)
+  max_gap: 0.6               # start a new caption after a pause this long
+  min_duration: 0.7          # shorter captions are folded into the previous one
+  uppercase: false
+  highlight_numbers: true
+  highlight_emphasis: true   # words said noticeably louder than usual
+  emphasis_db: 5.0
+  pop: true                  # small scale pop when a caption appears
+  write_srt: true            # also write an .srt for YouTube's subtitle upload
+
+broll:
+  enabled: true
+  library: assets/broll/library.yaml
+  duration: 3.6
+  min_interval: 12.0
+  max_per_minute: 2
+  lead: 0.25                 # show the card slightly before the word
+
+layout:
+  mode: auto                 # auto | screen_face | full
+  screen: null               # [x, y, w, h] in source pixels; null = auto-detect
+  face: null                 # [x, y, w, h] in source pixels; null = auto-detect
+  face_tile: 0               # which participant tile is the presenter (0 = top)
+  # Trim inside the shared screen: auto (cut static browser tabs / ribbons / taskbar
+  # at the top and bottom) or [top, bottom, left, right] as fractions of the screen.
+  screen_trim: auto
+
+audio:
+  highpass: 70
+  denoise: false
+  loudness: -14              # LUFS target used by YouTube and Instagram
+  true_peak: -1.5
+
+outputs:
+  youtube:
+    enabled: true
+    width: 1920
+    height: 1080
+    fps: 30
+    cq: 21
+    maxrate: 14M
+  instagram:
+    enabled: true
+    width: 1080
+    height: 1920
+    fps: 30
+    cq: 22
+    maxrate: 10M
+    max_seconds: 180         # longer edits are split into parts at sentence ends
+
+encoder: auto                # auto (NVENC if available) | nvenc | x264
+
+title: null                  # topic shown in the title chip; null = from filename

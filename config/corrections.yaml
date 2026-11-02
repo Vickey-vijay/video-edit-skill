@@ -1,0 +1,41 @@
+# Caption fixes applied to every video: what Whisper writes -> what to show.
+# Mostly English trading terms that Whisper spells in Tamil script, or mishears.
+# Only add unambiguous entries (a word that always means the same thing).
+# Matching ignores punctuation; the original punctuation is kept.
+
+words:
+  பாட்டங்கள்: patterns
+  பாட்டங்கள்தான்: patterns-தான்
+  பாட்டன்: pattern
+  பாட்டன்ஸ்: patterns
+  பேட்டர்ன்: pattern
+  பேட்டர்ன்ஸ்: patterns
+  புலிஷ்: bullish
+  புல்லிஷ்: bullish
+  பாரிஷ்: bearish
+  பேரிஷ்: bearish
+  காட்லி: Gartley
+  கார்ட்லி: Gartley
+  gaudily: Gartley
+  guardy: Gartley
+  கிராப்: Crab
+  கிராபு: Crab
+  சைப்பர்: Cypher
+  சைபர்: Cypher
+  cipher: Cypher
+  பட்டர்ஃப்ளை: Butterfly
+  பட்டர்பிளை: Butterfly
+  ரேட்ரேஸ்மென்ட்: retracement
+  ரீட்ரேஸ்மென்ட்: retracement
+  ரீட்ரேஸ்மின்ட்: retracement
+  பாட்டன்ஸே: patterns
+  ஃபிபோனச்சி: Fibonacci
+  ஹார்மோனிக்: harmonic
+  ஹையர்: higher
+  டிசைட்: decide
+  ஏக்ஜாம்பில்: example
+  ஸ்டாக்: stock
+  bat: Bat
+  BAT: Bat
+  gartley: Gartley
+  fibonacci: Fibonacci

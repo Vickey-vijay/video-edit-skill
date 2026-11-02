@@ -1,0 +1,33 @@
+# Visual style, taken from the design tokens of Nagarajan's Elliott Wave guide
+# (ElliottWave/elliott_wave_guide.html, dark theme). Replace these values to
+# restyle every video; nothing else in the pipeline hard-codes a colour or font.
+
+name: Naga Rajan              # shown on the facecam label
+series: Trading Class         # small label above the title
+
+colors:
+  bg: "#0E1828"
+  paper: "#13213A"
+  code_bg: "#1A2B43"
+  rule: "#2D3F5C"
+  grid: "#BED2EB0F"           # rgba(190,210,235,0.06) as #RRGGBBAA
+  fg: "#E4EAF2"
+  fg2: "#BCC8D8"
+  muted: "#A9B8CC"
+  accent: "#71C6DC"
+  accent_soft: "#173A4A"
+  on_accent: "#0E1828"
+  up: "#5CC6B1"
+  down: "#FF8E7E"
+  highlight: "#FFB347"        # keyword colour in captions (--deg4)
+  degrees: ["#F272FF", "#6F98FF", "#2FD6EC", "#76DB7A", "#FFB347", "#BDBDBD"]
+
+fonts:
+  display: { file: bricolage-grotesque-800.ttf, family: "Bricolage Grotesque 96pt ExtraBold" }
+  body:    { file: atkinson-hyperlegible-700.ttf, family: "Atkinson Hyperlegible" }
+  body_regular: { file: atkinson-hyperlegible-400.ttf, family: "Atkinson Hyperlegible" }
+  mono:    { file: jetbrains-mono-700.ttf, family: "JetBrains Mono" }
+  tamil:   { file: noto-sans-tamil-800.ttf, family: "Noto Sans Tamil" }
+
+radius: 22
+grid_step: 48
