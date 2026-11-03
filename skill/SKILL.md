@@ -1,93 +1,76 @@
 ---
 name: nagarajan-video-edit
-description: Edit Naga Rajan's (Nagarajan's) trading-class recordings into finished MP4s for YouTube (16:9) and Instagram Reels (9:16). Cuts silences, Tamil/English fillers, repeats and stutters using a word-timestamped transcript, adds zoom-ins/zoom-outs, brand-styled captions with highlighted keywords, and B-roll concept cards. Use whenever Vickey or Nagarajan uploads or points at a new class video, says "edit this video", "make a reel / YouTube video from this class", "process the inbox", or asks to re-render or tweak an edit (captions, zoom, B-roll, title).
+description: Edit Naga Rajan's (Nagarajan's) Tamil trading videos into finished MP4s. Phone talking-head / screen-pointing clips (vertical) become a 1080x1920 Reel/Short with his false starts cut, English captions, a cut-out of him over a topic-themed animated background, a hook, stat stickers and sound design. Meet recordings (16:9) become YouTube 16:9 plus Instagram 9:16. Use whenever Vickey or Nagarajan uploads or points at a class/market video, says "edit this video", "make a reel / short from this", "process the inbox", or asks to re-render or tweak an edit (cuts, captions, graphics, theme, hook).
 ---
 
 # Nagarajan video edit
 
-Repo: `{{REPO}}`
-Python: `%USERPROFILE%\.video-edit-skill\venv\Scripts\python.exe` (models, work files, venv live in
-`%USERPROFILE%\.video-edit-skill`, outside OneDrive). Run commands from the repo folder:
+Repo: `{{REPO}}`. Python venv, Whisper and matting models, and per-video work folders live in
+`%USERPROFILE%\.video-edit-skill` (outside OneDrive). Run from the repo folder in PowerShell:
+`.\vedit.cmd <command> ...`. In Git Bash, `vedit.cmd` mangles paths with spaces (WhatsApp files have
+them): call the venv python directly instead: `PYTHONPATH=<repo> <venv>\Scripts\python.exe -m vedit ...`.
+Outputs land in `output/<video name>/`.
 
-```
-.\vedit.cmd <command> ...
-```
+**How he speaks (why the cutter works the way it does).** He is Tamil with English finance words. His
+real problem is not "um": it is false starts. He begins a sentence, stops (sometimes mid-word), pauses
+0.4-4 s and says it again, sometimes three attempts in a row; only the last is complete. Whisper often
+never writes the aborted attempt and its timestamps drift, so cuts are decided from the audio as well as
+the text. Tamil particles such as ஆ / ஏ are grammar, not fillers.
 
-Outputs land in `output/<video name>/`: `<name>_youtube.mp4`, `<name>_instagram.mp4` (plus
-`_instagram_partN.mp4` when the edit is over 3 minutes), `<name>.srt`, preview contact sheets,
-`report.html`, `plan.json`.
+## Phone footage (vertical, 9:16): the Reel pipeline
 
-## Procedure for each new video
+1. **Plan**: `run "<video>" --title "<topic>" --stop-after plan`. First run downloads Whisper large-v3
+   (~3 GB). Transcribing 2.5 min takes ~4 min on the RTX 3050.
+2. **Review the cuts**: `restarts "<video>"` prints every speech phrase (P#, times, text, `*` = cut) and
+   every false-start candidate with its evidence (text coverage, audio similarity cost: repeats are
+   usually 27-40, unrelated phrases ~50; TRUNCATED = cut off mid-word). Read ALL phrases, not just the
+   candidates. Decide, then record by time (numbers shift between plans):
+   `decide "<video>" --cut 3 --keep 5 --cut-at 89.2 --keep-at 40.1 --cut-range 106.1-107.7`
+   and re-run step 1. Judge by meaning: keep the last, complete attempt; keep a sentence that is
+   genuinely different even if a few words match; a very low audio cost (<30) beats a text mismatch,
+   because Whisper may not have written the attempt down.
+3. **Listen to the edit**: `qa "<video>"` re-transcribes the edited audio and looks for surviving false
+   starts and long pauses. Fix what it finds (step 2) until it is clean. Never skip this: reading the
+   transcript is not the same as hearing the result.
+4. **English captions** (he speaks Tamil; viewers outside Tamil Nadu need English; no Tamil on screen):
+   `cues "<video>"` prints each kept phrase with the Tamil and a second decode. Translate BY MEANING,
+   cross-checking context and the picture (Whisper writes English words phonetically in Tamil script,
+   e.g. "திருமணமான விஸினிஸ்" = "established business"). Write `id|English` lines to a file and run
+   `translate "<video>" file.txt`. Cue ids are positional: if a re-plan adds or removes a phrase, remap the
+   ids. Never invent what he did not say; flag unclear numbers to the user.
+5. **Graphics spec**: write `graphics.yaml` in the video's work folder (path printed by `restarts`;
+   worked examples in `examples/`). Times are SOURCE seconds. Choose: `theme`/`themes` (gold for gold,
+   golden ratio and money; market for price action; studio for calm), a `hook` (big word behind him +
+   two kicker lines), `stats` (sticker with a figure), `tags` (short statements) and a `cta`. Every figure
+   must be one he said and one you can verify (on screen or in the transcript).
+6. **Look before rendering**: `preview "<video>" 0.8 8.5 40` renders those edited-time seconds to PNG in
+   the output folder. Open them and judge them honestly (hook legible? sticker off his face? caption
+   readable? matte clean?). Fix and repeat.
+7. **Render**: `render "<video>"` (matting is cached; first matte takes ~10 min CPU per clip; the
+   composite runs ~1.5 frames/s, so a 90 s reel takes ~25 min: run it in the background). Then verify:
+   duration, a few extracted frames, audio level (-14 LUFS), and send the MP4 plus the `_en.srt`.
 
-1. **Plan** (transcribe + decide the edit, no rendering yet):
-   ```
-   .\vedit.cmd run "<video>" --title "<topic>" --stop-after plan [--config presets/meet-edge-share.yaml]
-   ```
-   - Pick the title from what the class is about (ask if unclear). It shows on screen.
-   - Use `presets/meet-edge-share.yaml` for Google Meet recordings where he shares his whole
-     screen with Edge open (TradingView / PDF): it hides the browser bars and the taskbar.
-   - First run on a machine downloads Whisper large-v3 (~3 GB). Transcription of a 3-minute
-     clip takes ~4 minutes on the RTX 3050; a 20-minute class roughly 20-25 minutes.
+Footage of him pointing at a screen is never cut out (the chart would vanish); it gets the grade, a slow
+push-in, the hook with a scrim and the stickers. Talking-head frames get the matte and background.
 
-2. **Check the layout**: open `layout_preview.png` (path printed by `review`). The orange box
-   is what fills the main panel, the purple box is the facecam crop. If wrong, set
-   `layout.screen` / `layout.face` / `layout.screen_trim` in a sidecar YAML next to the video
-   (`<video>.yaml`) and re-run step 1.
+## Meet / 16:9 recordings (older pipeline)
 
-3. **Review the plan**:
-   ```
-   .\vedit.cmd review "<video>"
-   ```
-   Read every caption line. Whisper is weak on Tamil-English speech, so fix it:
-   - Wrong word, clear from context (English trading term spelled in Tamil script, misheard
-     ratio): `.\vedit.cmd fix "<video>" 57=patterns 80=Gartley`
-   - Garbled and not recoverable from context: hide it, `.\vedit.cmd fix "<video>" 91=`
-   - **Never invent words he did not say.** If unsure, hide rather than guess.
-   - A mishearing that will recur in future videos: add it to `config/corrections.yaml`
-     (only if the Tamil spelling always means that English word).
-   - Check the removed-words list. Tamil particles like ஆ / ஏ after a number are grammar,
-     not fillers; if something meaningful was cut, remove it from `config/fillers.yaml` and
-     re-run step 1.
-   - Drop an irrelevant B-roll card: `.\vedit.cmd fix "<video>" --drop-broll 2`
+`run "<video>" --title "<topic>" --config presets/meet-edge-share.yaml --stop-after plan`, then
+`review` / `fix` for Tamil captions, then `render`. Produces YouTube 16:9 and Instagram 9:16.
 
-4. **Render**:
-   ```
-   .\vedit.cmd render "<video>"
-   ```
-   About 1.5x real time per output on this PC (NVENC). Renders YouTube and Instagram.
+## Automatic mode
 
-5. **Verify before reporting**: look at `output/<name>/<name>_youtube_preview.jpg` and
-   `_instagram_preview.jpg`; grab a frame or two where B-roll / zooms happen
-   (`ffmpeg -ss <t> -i <mp4> -frames:v 1 x.png`) and check them. Open `report.html` for the
-   cut list. Then send the MP4s and the report to the user (SendUserFile), saying what was
-   checked and what was not (e.g. caption accuracy in Tamil is reviewed but not perfect).
-
-## Automatic mode (no review)
-
-`.\vedit.cmd watch` (or double-click `watch.cmd`) processes every video dropped into `inbox/`
-with the default settings and moves the source to `inbox/done/`. Same pipeline without step 3,
-so captions keep Whisper's mistakes. Use it for speed; use the procedure above for quality.
-
-## Knobs (config/default.yaml, override per video with `--set key=value` or a sidecar YAML)
-
-| What | Setting |
-|---|---|
-| How tight the cutting is | `cuts.max_pause` (0.45 s), `cuts.pad_before/after` |
-| Soft fillers (so, basically, அது வந்து...) | `cuts.soft_fillers: off / isolated / all` |
-| Zoom strength / frequency | `zoom.punch_in`, `zoom.min_interval`, `zoom.max_per_minute`, `zoom.enabled` |
-| Zoom-out reveals | `zoom.zoom_out_reveal`, `zoom.reveal_from` |
-| Caption size of each line | `captions.max_words`, `captions.max_chars` |
-| B-roll frequency | `broll.min_interval`, `broll.max_per_minute`, `broll.enabled` |
-| Brand colours / fonts / name | `config/brand.yaml` |
-| Highlighted keywords | `config/keywords.yaml` |
-| B-roll cards and their keywords | `assets/broll/library.yaml`, then `.\vedit.cmd cards` |
+`watch.cmd` processes whatever is dropped into `inbox/` with defaults: no review, no English captions,
+no graphics spec. Fine for speed, not for quality.
 
 ## Things to keep in mind
 
-- Harmonic ratios on the B-roll cards come from his HARMONIC PATTERN.pdf as seen in the
-  recordings; if he teaches different values, edit `assets/broll/library.yaml`.
-- The style tokens come from his Elliott Wave guide (dark navy, cyan accent, Bricolage
-  Grotesque / Atkinson Hyperlegible / JetBrains Mono). If a Claude Design project for him
-  exists, update `config/brand.yaml` from it.
-- Other speakers in the call (questions from students) are kept; only dead air and
-  disfluencies are cut.
+- This is a coding-agent pipeline, not a human editor. State honestly what was verified (frames, audio
+  check) and what was not (the Tamil translation has not been checked by a Tamil speaker).
+- No stock footage, music or AI image generation is available; backgrounds are procedural, sound effects
+  are synthesised. Put own clips in `assets/broll/` and music is not mixed in.
+- Patching files from a shell heredoc: avoid backslashes (a `\n` becomes a real newline); use the file
+  tools for anything containing them.
+- Pillow here has no Tamil shaping: on-screen text is English only.
+- Colours/fonts: gold on near-black, Anton + Montserrat ExtraBold + Playfair italic. The earlier navy/cyan
+  look was rejected as "AI-looking"; do not bring it back.

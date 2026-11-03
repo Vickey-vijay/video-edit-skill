@@ -63,3 +63,22 @@ video, `--config file.yaml`, or `--set zoom.punch_in=1.2`.
 | `vedit/captions.py` | ASS captions with active-word / keyword colours, SRT |
 | `vedit/graphics.py` | background frame, panel holes, name chip, B-roll cards (Pillow) |
 | `vedit/cli.py` | commands above, watch folder |
+
+## Vertical phone footage: the Reel pipeline
+
+For vertical clips (phone talking head, pointing at a screen) the output is one 1080x1920 Reel/Short:
+false starts cut, English captions, him cut out over an animated topic background, hook, stat stickers,
+sound design. Step-by-step procedure (and why it works the way it does): `skill/SKILL.md`.
+Worked examples of the review decisions, graphics spec and English captions: `examples/`.
+
+| File | Does |
+|---|---|
+| `vedit/restarts.py`, `vedit/acoustic.py` | false-start detection from phonetic text matching plus audio similarity (MFCC + time warping); decisions by time |
+| `vedit/matte.py` | Robust Video Matting (ONNX) run over the whole clip; conform to constant frame rate |
+| `vedit/backgrounds.py` | gold / market / studio procedural backgrounds |
+| `vedit/motion.py`, `vedit/fx.py` | hook behind the subject, stickers, tags, end card, captions; easing, text sprites |
+| `vedit/shorts.py`, `vedit/reel.py` | compositor (matte, light wrap, grade, grain) and orchestration |
+| `vedit/sfx.py` | synthesised whooshes, pops and impacts mixed under the voice |
+| `vedit/captions_en.py` | English caption timing; SRT export |
+
+Commands: `restarts`, `decide`, `qa`, `cues`, `translate`, `preview`, then `render`.
