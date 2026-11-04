@@ -354,6 +354,20 @@ def cmd_preview(a):
         print(out)
 
 
+def cmd_chunk(a):
+    """Internal: render edited frames [n0, n1) of a reel to a video-only file (one parallel worker)."""
+    import cv2
+    from . import reel, shorts
+    cv2.setNumThreads(3)
+    video = Path(a.video).resolve()
+    cfg = load_config(video, a.config, parse_set(a.set))
+    wd = work_dir(video)
+    plan = load_json(wd / "plan.json")
+    R, conf, alpha = reel.prepare(plan, cfg, wd)
+    n = shorts.render_range(R, conf, alpha, a.n0, a.n1, Path(a.out), cfg)
+    print(f"chunk {a.n0}-{a.n1}: {n} frames", flush=True)
+
+
 def cmd_cards(a):
     from .graphics import make_cards
     cfg = load_config()
@@ -438,6 +452,14 @@ def main(argv=None):
     tr.add_argument("video")
     tr.add_argument("file")
     tr.set_defaults(fn=cmd_translate)
+
+    ck = sub.add_parser("chunk", help="internal: render one piece of a reel (used by parallel rendering)")
+    ck.add_argument("video")
+    ck.add_argument("n0", type=int)
+    ck.add_argument("n1", type=int)
+    ck.add_argument("out")
+    common(ck)
+    ck.set_defaults(fn=cmd_chunk)
 
     pv = sub.add_parser("preview", help="render single frames (edited seconds) of the reel to PNG")
     pv.add_argument("video")

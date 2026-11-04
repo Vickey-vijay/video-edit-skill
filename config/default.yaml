@@ -110,3 +110,7 @@ outputs:
 encoder: auto                # auto (NVENC if available) | nvenc | x264
 
 title: null                  # topic shown in the title chip; null = from filename
+
+short:                       # vertical Reel / Short pipeline
+  grain: 6.0
+  workers: 4                 # render in this many parallel pieces (needs CPU cores; NVENC allows several sessions)

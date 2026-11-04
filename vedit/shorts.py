@@ -110,6 +110,18 @@ class Shorts:
                 return e["theme"]
         return self.default_theme
 
+    def theme_change(self, t, theme):
+        """(previous theme, when this one began) if it began within the last 0.4 s, else (None, None).
+        Worked out from the time alone, so any piece of the video can be rendered on its own."""
+        for j in range(1, 9):
+            tt = t - j * 0.05
+            if tt < 0:
+                return None, None
+            prev = self.theme_at(tt)
+            if prev != theme:
+                return prev, tt + 0.05
+        return None, None
+
     def bg(self, theme, t):
         if theme not in self._bg:
             self._bg[theme] = backgrounds.make(theme, BW, BH)
@@ -149,17 +161,19 @@ class Shorts:
         if talk:
             theme = self.theme_at(t)
             canvas = self.bg(theme, t)
-            prev, tc = self._last
-            if prev is not None and prev != theme and t - tc < 0.4:        # cross-fade between themes
+            prev, tc = self.theme_change(t, theme)
+            if prev is not None:                                           # cross-fade between themes
                 k = (t - tc) / 0.4
                 canvas = canvas * k + self.bg(prev, t) * (1 - k)
-            elif prev != theme:
-                self._last = (theme, t) if prev is not None else (theme, -9.0)
             for e in self.elements:
                 if e.alive(t):
                     e.back(canvas, t)
             blur = cv2.GaussianBlur(canvas, (0, 0), 16)
             sub, a = self.subject.layer(rgb, alpha, zoom, blur)
+            band = a[int(H * 0.20):int(H * 0.38), :, 0].max(axis=0) > 0.5     # where his head is, so stickers keep clear
+            xs = np.flatnonzero(band)
+            for e in self.elements:
+                e.avoid = (int(xs[0]), int(xs[-1])) if len(xs) else None
             canvas = sub * a + canvas * (1 - a)
         else:
             canvas = self.subject.footage(rgb, zoom)
@@ -187,9 +201,90 @@ def stream(path, frames, fps, w, h, pix):
          "-f", "rawvideo", "-pix_fmt", pix, "-"], stdout=subprocess.PIPE)
 
 
-def render(R, conform, alpha, audio_wav, ass_path, out_path, cfg, fonts_dir, frames_limit=None):
-    """Run the compositor over the whole edit and encode with NVENC in one pass."""
+def chunk_ranges(frames, n0, n1):
+    """Source frame ranges that make up edited frames [n0, n1)."""
+    out, acc = [], 0
+    for a, b in frames:
+        s, e = acc, acc + (b - a)
+        lo, hi = max(s, n0), min(e, n1)
+        if hi > lo:
+            out.append([a + (lo - s), a + (hi - s)])
+        acc = e
+    return out
+
+
+def render_range(R, conform, alpha, n0, n1, out_path, cfg):
+    """Composite and encode edited frames [n0, n1) to a video-only file (one worker's share)."""
     from .render import _encode_args
+    info = R.plan["info"]
+    sw, sh, fps = info["width"], info["height"], R.fps
+    ranges = chunk_ranges(R.plan["segments"], n0, n1)
+    vid = stream(conform, ranges, fps, sw, sh, "bgr24")
+    alp = stream(alpha, ranges, fps, sw, sh, "gray")
+    o = dict(cfg["outputs"]["instagram"])
+    o["fps"] = fps
+    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(fps),
+           "-i", "-", "-vf", "format=yuv420p", *_encode_args(o, cfg), "-an", str(out_path)]
+    enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    vs, as_ = sw * sh * 3, sw * sh
+    done = 0
+    for n in range(n0, n1):
+        vb, ab = vid.stdout.read(vs), alp.stdout.read(as_)
+        if len(vb) < vs or len(ab) < as_:
+            break
+        enc.stdin.write(R.frame(n, np.frombuffer(vb, np.uint8).reshape(sh, sw, 3),
+                                np.frombuffer(ab, np.uint8).reshape(sh, sw)).tobytes())
+        done += 1
+        if done % 100 == 0:
+            print(f"  frames {n0}-{n1}: {done}/{n1 - n0}", flush=True)
+    vid.kill(), alp.kill()
+    enc.stdin.close()
+    enc.wait()
+    return done
+
+
+def render_parallel(R, audio_wav, out_path, cfg, workers):
+    """Split the edit into pieces, render each in its own process, join them and add the sound."""
+    import os
+    import sys
+    from pathlib import Path
+    from .util import REPO, run
+    total = int(round(R.duration * R.fps))
+    step = -(-total // workers)
+    cdir = Path(audio_wav).parent / "chunks"
+    cdir.mkdir(exist_ok=True)
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONPATH=str(REPO))
+    procs = []
+    for k in range(workers):
+        n0, n1 = k * step, min(total, (k + 1) * step)
+        if n0 >= n1:
+            break
+        out = cdir / f"chunk{k}.mp4"
+        out.unlink(missing_ok=True)
+        logf = open(cdir / f"chunk{k}.log", "w")
+        procs.append((subprocess.Popen(
+            [sys.executable, "-m", "vedit", "chunk", str(R.plan["source"]), str(n0), str(n1), str(out)],
+            stdout=logf, stderr=subprocess.STDOUT, env=env, cwd=str(REPO)), out, logf, (n0, n1)))
+    log(f"compositing {total} frames at {W}x{H} in {len(procs)} parallel pieces ...")
+    for p, out, logf, (n0, n1) in procs:
+        p.wait()
+        logf.close()
+        if p.returncode or not out.exists():
+            raise RuntimeError(f"piece {n0}-{n1} failed; see {cdir / out.with_suffix('.log').name}")
+    lst = cdir / "list.txt"
+    lst.write_text("".join(f"file '{out.name}'\n" for _, out, _, _ in procs), encoding="utf-8")
+    run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-i", audio_wav, "-map", "0:v",
+         "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart",
+         "-t", f"{R.duration:.3f}", out_path])
+    return total
+
+
+def render(R, conform, alpha, audio_wav, ass_path, out_path, cfg, fonts_dir, frames_limit=None):
+    """Run the compositor over the whole edit and encode with NVENC (in parallel pieces when configured)."""
+    from .render import _encode_args
+    workers = int(cfg.get("short", {}).get("workers", 1))
+    if workers > 1 and not frames_limit and not ass_path and int(round(R.duration * R.fps)) > 200:
+        return render_parallel(R, audio_wav, out_path, cfg, workers)
     info = R.plan["info"]
     sw, sh, fps = info["width"], info["height"], R.fps
     frames = R.plan["segments"]

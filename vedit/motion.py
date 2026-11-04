@@ -142,8 +142,17 @@ class Stat(Element):
         if p <= 0 or out <= 0:
             return
         x = W * (0.20 if self.side == "left" else 0.80)
+        base = 0.82
+        cw = self.card.shape[1]
+        head = getattr(self, "avoid", None)          # (left, right) of his head in this frame, when he is cut out
+        if head is not None:
+            gap, edge = 70, 22                                  # a tilted card's corners reach further than its width
+            room = (head[0] if self.side == "left" else W - head[1]) - gap - edge
+            base = max(0.55, min(base, room / cw))              # shrink to fit beside him, but not below 55%
+            half = cw * base / 2
+            x = edge + half if self.side == "left" else W - edge - half     # live in the margin, away from him
         bob = math.sin((t - self.t0) * 1.6) * 5
-        blit(canvas, self.card, x, H * self.y + bob, scale=0.82 * (0.5 + 0.5 * min(p, 1.2)) * (0.9 + 0.1 * out),
+        blit(canvas, self.card, x, H * self.y + bob, scale=base * (0.5 + 0.5 * min(p, 1.2)) * (0.9 + 0.1 * out),
              rot=self.tilt * (0.6 + 0.4 * min(p, 1.0)), alpha=min(1.0, p * 2) * out)
 
 
