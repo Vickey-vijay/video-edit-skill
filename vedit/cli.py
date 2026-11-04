@@ -81,6 +81,16 @@ def build_plan(video, cfg, wd):
     a16 = extract_audio_16k(video, wd / "audio16k.wav")
     tr = transcribe(a16, cfg["whisper"], wd / "transcript.json")
     layout = resolve_layout(video, info, cfg, wd)
+    cfg["footage_ranges"] = []
+    fcfg = (cfg.get("short") or {}).get("footage") or {}
+    if layout["mode"] == "full" and info["height"] > info["width"] and fcfg.get("check", True):
+        from . import footage, reel
+        conf, _, talk = reel.scenes(video, info, cfg, wd, info["fps_out"])
+        m = footage.analyze(conf, info, wd)
+        found = footage.add_interludes(footage.bad_ranges(m, info["fps_out"], fcfg), talk, info["fps_out"], fcfg)
+        cfg["footage_ranges"] = found
+        log("hand-held footage: " + (", ".join(f"{a / info['fps_out']:.1f}-{b / info['fps_out']:.1f}s {why}"
+                                              for a, b, why in found) or "no swings, blur or camera interludes found"))
     motion = None
     if cfg["zoom"].get("enabled") and cfg["zoom"].get("focus") == "auto" and layout.get("content"):
         from .analyze import Motion
@@ -354,6 +364,33 @@ def cmd_preview(a):
         print(out)
 
 
+def cmd_footage(a):
+    """Report the hand-held problems found in a video: swings, blur, jolts, and what the edit does with them."""
+    import numpy as np
+    from . import footage
+    from .matte import conform
+    video = Path(a.video).resolve()
+    cfg = load_config(video, a.config, parse_set(a.set))
+    wd = work_dir(video)
+    info = probe(video)
+    fcfg = (cfg.get("short") or {}).get("footage") or {}
+    m = footage.analyze(conform(video, wd, info), info, wd)
+    fps = info["fps_out"]
+    plan = load_json(wd / "plan.json") if (wd / "plan.json").exists() else None
+    keep = np.zeros(len(m["tx"]), bool)
+    if plan:
+        for s0, e0 in plan["segments"]:
+            keep[s0:e0] = True
+    print(f"{len(m['tx'])} frames, {len(m['tx']) / fps:.1f} s")
+    for f0, f1, why in footage.bad_ranges(m, fps, fcfg):
+        left = int(keep[f0:f1].sum()) if plan else f1 - f0
+        print(f"  {f0 / fps:7.2f}-{f1 / fps:7.2f}s  {why:8s} {f1 - f0:3d} frames" + (f"  still in the edit: {left}" if plan else ""))
+    if plan:
+        for h in plan.get("footage", []):
+            print(f"  plan: {h['action']:5s} {h['frames'][0] / fps:.2f}-{h['frames'][1] / fps:.2f}s ({h['why']}, speech {h['speech']}s)")
+        print(f"  frames held under speech: {sum(b - a0 for a0, b in plan.get('holds', []))}")
+
+
 def cmd_chunk(a):
     """Internal: render edited frames [n0, n1) of a reel to a video-only file (one parallel worker)."""
     import cv2
@@ -460,6 +497,11 @@ def main(argv=None):
     ck.add_argument("out")
     common(ck)
     ck.set_defaults(fn=cmd_chunk)
+
+    ft = sub.add_parser("footage", help="report hand-held problems (swings, blur, jolts) and what the edit does with them")
+    ft.add_argument("video")
+    common(ft)
+    ft.set_defaults(fn=cmd_footage)
 
     pv = sub.add_parser("preview", help="render single frames (edited seconds) of the reel to PNG")
     pv.add_argument("video")

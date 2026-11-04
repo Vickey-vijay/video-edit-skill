@@ -20,7 +20,9 @@ the text. Tamil particles such as ஆ / ஏ are grammar, not fillers.
 ## Phone footage (vertical, 9:16): the Reel pipeline
 
 1. **Plan**: `run "<video>" --title "<topic>" --stop-after plan`. First run downloads Whisper large-v3
-   (~3 GB). Transcribing 2.5 min takes ~4 min on the RTX 3050.
+   (~3 GB). Transcribing 2.5 min takes ~4 min on the RTX 3050. The plan step also checks the hand-held
+   footage (see "Hand-held footage" below): the log line `hand-held footage: ...` lists the swings, blur and
+   camera interludes it found; `footage "<video>"` prints them with what the edit does about each.
 2. **Review the cuts**: `restarts "<video>"` prints every speech phrase (P#, times, text, `*` = cut) and
    every false-start candidate with its evidence (text coverage, audio similarity cost: repeats are
    usually 27-40, unrelated phrases ~50; TRUNCATED = cut off mid-word). Read ALL phrases, not just the
@@ -41,17 +43,46 @@ the text. Tamil particles such as ஆ / ஏ are grammar, not fillers.
 5. **Graphics spec**: write `graphics.yaml` in the video's work folder (path printed by `restarts`;
    worked examples in `examples/`). Times are SOURCE seconds. Choose: `theme`/`themes` (gold for gold,
    golden ratio and money; market for price action; studio for calm), a `hook` (big word behind him +
-   two kicker lines), `stats` (sticker with a figure), `tags` (short statements) and a `cta`. Every figure
-   must be one he said and one you can verify (on screen or in the transcript).
+   two kicker lines), `stats` (sticker with a figure), `tags` (short statements), `cards` (words on the
+   background while the picture is unusable: one per `card` the footage check reports) and a `cta`. Every
+   figure must be one he said and one you can verify (on screen or in the transcript).
 6. **Look before rendering**: `preview "<video>" 0.8 8.5 40` renders those edited-time seconds to PNG in
    the output folder. Open them and judge them honestly (hook legible? sticker off his face? caption
    readable? matte clean?). Fix and repeat.
-7. **Render**: `render "<video>"` (matting is cached; first matte takes ~10 min CPU per clip; the
-   composite runs ~1.5 frames/s, so a 90 s reel takes ~25 min: run it in the background). Then verify:
-   duration, a few extracted frames, audio level (-14 LUFS), and send the MP4 plus the `_en.srt`.
+7. **Render**: `render "<video>"`. Order of work (all cached in the work folder): conform to constant
+   frame rate -> matte on the GPU (about 2 min per clip) -> **enhance** (super-resolution, steadier picture,
+   cleaner cut-out; about 5 frames/s on the RTX 3050, so ~7-9 min for a 90 s reel) -> composite in 4
+   parallel pieces. Run it in the background. Then verify from the real MP4: duration, frames (zoom into
+   his hair and the sleeve edge), audio level (-14 LUFS), the `footage` report (nothing bad left in the
+   edit), and send the MP4 plus the `_en.srt`. Send the full-quality file, not a re-encoded phone copy.
 
 Footage of him pointing at a screen is never cut out (the chart would vanish); it gets the grade, a slow
 push-in, the hook with a scrim and the stickers. Talking-head frames get the matte and background.
+
+## Hand-held footage and picture quality (what the render does for you)
+
+He films himself by hand. Four things follow, and each is handled; check each in the output.
+
+- **Swings, blur, exposure jolts** (`footage.py`): the camera is tracked over the whole clip. A swing is a
+  step of more than ~14 px a frame at 480 wide (a slow deliberate pan is up to ~10 and is left alone), or
+  fast and smeared; blur is sharpness falling below ~55% of its recent level for 4+ frames. Stretches with
+  no speech are cut. With speech: a **card** (his words over the animated background, for swings and for
+  camera interludes) or a **hold** (last good frame, slowly pushed in, for blur in the middle of a shot).
+  If a soft stretch starts a piece there is nothing to hold, so the soft frames stay (cutting would lose
+  words): listed as `kept soft`. A short stretch with nobody in frame between two talking shots is a camera
+  interlude (he moved or put down the phone), not a cutaway.
+- **Shake on screen footage**: camera path smoothed per shot (sigma 15 frames, at most 3% of the width), one
+  warp, slight crop-in (`short.enhance.stab_zoom`). Talking shots are not stabilised: the camera is steady
+  there and his own movement must not be fought.
+- **Soft picture**: Real-ESRGAN "general v3" (official weights, fp16) at 2.7x the 480x848 source, denoise
+  blend for WhatsApp compression, a little plain upscale mixed back so skin is not waxy, temporal smoothing
+  of fine detail so the sharpening does not shimmer. Needs torch + a CUDA GPU (`setup.ps1` installs it);
+  without them the render falls back to the plain upscale and says so.
+- **Hair, ears, halo of the old room**: RVM runs on the original footage; its low-resolution matte is
+  re-snapped to the enhanced picture with a guided filter, the colour of the old room is removed from his
+  edge pixels (Blur-Fusion foreground estimate), and stray blobs are dropped. Tune in `short.matte`.
+- Output is 1080x1920 at ~16 Mbps (BT.709-tagged). A 4K file would only be bigger pixels: the source is
+  480 px wide and Instagram / Shorts serve 1080.
 
 ## Meet / 16:9 recordings (older pipeline)
 

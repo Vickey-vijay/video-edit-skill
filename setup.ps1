@@ -20,6 +20,19 @@ $vpy = Join-Path $Venv "Scripts\python.exe"
 & $vpy -m pip install --upgrade pip
 & $vpy -m pip install -r (Join-Path $Repo "requirements.txt")
 
+# GPU enhancement (super-resolution, cleaner cut-out, GPU matting). Optional: without an NVIDIA GPU the
+# pipeline falls back to a plain upscale and CPU matting. Driver 525+ is enough for the CUDA 12.4 build.
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    Write-Host "NVIDIA GPU found: installing torch (CUDA 12.4) and onnxruntime-gpu (about 3 GB, once)"
+    & $vpy -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+    & $vpy -m pip uninstall -y onnxruntime
+    # 1.22 is built for CUDA 12; newer builds need CUDA 13 and will not load next to this torch
+    & $vpy -m pip install "onnxruntime-gpu==1.22.0"
+} else {
+    Write-Host "No NVIDIA GPU found: installing CPU onnxruntime (matting is slow, no enhancement)"
+    & $vpy -m pip install onnxruntime
+}
+
 # Claude Code skill (personal skills folder), pointing at this repo
 $SkillDir = Join-Path $env:USERPROFILE ".claude\skills\nagarajan-video-edit"
 New-Item -ItemType Directory -Force $SkillDir | Out-Null

@@ -208,6 +208,46 @@ class Cta(Element):
             blit(canvas, self.sub, W / 2, H * 0.44 + 190 + (1 - q) * 30, alpha=q)
 
 
+class Interlude(Element):
+    """Words on the animated background while the picture was unusable (the camera was being moved):
+    big type in the hook style, centred, with a gold marker line behind one of the lines."""
+
+    def __init__(self, t0, t1, lines=(), accent=None):
+        super().__init__(t0, t1)
+        self.accent = accent
+        self.sfx = (("whoosh", t0 - 0.05), ("pop", t0 + 0.3))
+        self.s_lines = []
+        for i, ln in enumerate(lines):
+            marker = accent == i
+            sp = text_sprite(ln.upper(), "display", 190 if len(ln) < 12 else 140, fill=INK if marker else IVORY,
+                             shadow=None if marker else (8, 10, INK), tracking=3)
+            h, w = sp.shape[:2]
+            if w > W * 0.9:
+                sp = cv2.resize(sp, (int(W * 0.9), int(h * W * 0.9 / w)), interpolation=cv2.INTER_AREA)
+            self.s_lines.append(sp)
+
+    def front(self, canvas, t):
+        a_in, a_out = _life(t, self.t0, self.t1, 0.45, 0.3)
+        out = ease_in_out(a_out)
+        if out <= 0:
+            return
+        y0 = H * 0.36
+        for i, sp in enumerate(self.s_lines):
+            p = spring((t - self.t0 - 0.08 * i) / 0.5)
+            if p <= 0:
+                continue
+            h, w = sp.shape[:2]
+            y = y0 + i * 230
+            if self.accent == i:
+                wipe = ease_out_cubic((t - self.t0 - 0.2 - 0.08 * i) / 0.32)
+                bar = rect_sprite(w * 1.04, h * 0.82, GOLD)
+                shade = rect_sprite(w * 1.04, h * 0.82, INK)
+                blit(canvas, shade, W / 2 - w * 0.52 * (1 - wipe) + 10, y + 12, sx=wipe, sy=1.0, rot=-1.4, alpha=out)
+                blit(canvas, bar, W / 2 - w * 0.52 * (1 - wipe), y, sx=wipe, sy=1.0, rot=-1.4, alpha=out)
+            blit(canvas, sp, W / 2, y + (1 - min(p, 1.0)) * 50, scale=0.85 + 0.15 * min(p, 1.25),
+                 rot=-1.4 if self.accent == i else 0.6, alpha=min(1.0, p * 1.6) * out)
+
+
 def build(spec, tl, duration):
     """Create elements from the graphics spec; times given in SOURCE seconds are mapped
     through the edit, and anything that sat in a cut-out stretch is dropped."""
@@ -229,6 +269,10 @@ def build(spec, tl, duration):
         t0 = at(float(s["at"]))
         if t0 is not None:
             out.append(Tag(t0, min(duration - 0.1, t0 + float(s.get("dur", 2.6))), s["text"], s.get("y", 0.215)))
+    for s in (spec or {}).get("cards", []):
+        t0 = at(float(s["at"]))
+        if t0 is not None:
+            out.append(Interlude(t0, min(duration - 0.1, t0 + float(s.get("dur", 2.0))), s.get("lines", []), s.get("accent")))
     c = (spec or {}).get("cta")
     if c:
         d = float(c.get("dur", 2.4))

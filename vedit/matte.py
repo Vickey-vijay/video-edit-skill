@@ -17,6 +17,19 @@ def model_path():
     return p
 
 
+def _providers(ort):
+    """CUDA when onnxruntime-gpu is installed (its DLLs come from the torch install), else CPU."""
+    if "CUDAExecutionProvider" in ort.get_available_providers():
+        try:
+            import torch  # noqa: F401  (loads the CUDA / cuDNN libraries onnxruntime needs)
+            if hasattr(ort, "preload_dlls"):
+                ort.preload_dlls()
+        except Exception:
+            pass
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"], "GPU"
+    return ["CPUExecutionProvider"], "CPU (slow: install onnxruntime-gpu, see setup.ps1)"
+
+
 def conform(src, wd, info):
     """Upright, constant frame rate, visually lossless: the footage every later step reads."""
     out = wd / "conform.mp4"
@@ -40,9 +53,12 @@ def matte(conformed, wd, w, h, fps, ratio=1.0, max_frames=None):
         log("matte cached")
         return out
     import onnxruntime as ort
+    providers, dev = _providers(ort)
     so = ort.SessionOptions()
     so.intra_op_num_threads = 0
-    sess = ort.InferenceSession(str(model_path()), so, providers=["CPUExecutionProvider"])
+    sess = ort.InferenceSession(str(model_path()), so, providers=providers)
+    if not sess.get_providers()[0].startswith("CUDA"):
+        dev = "CPU (slow: install a CUDA 12 onnxruntime-gpu, see setup.ps1)"
     states = [np.zeros((1, 1, 1, 1), np.float32) for _ in range(4)]
     ds = np.array([ratio], np.float32)
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(conformed), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
@@ -51,7 +67,7 @@ def matte(conformed, wd, w, h, fps, ratio=1.0, max_frames=None):
                             "-r", str(fps), "-i", "-", "-c:v", "ffv1", "-pix_fmt", "gray", str(out)],
                            stdin=subprocess.PIPE)
     n, size = 0, w * h * 3
-    log(f"matting {w}x{h} (CPU) ...")
+    log(f"matting {w}x{h} on the {dev}, downsample ratio {ratio} ...")
     while True:
         buf = dec.stdout.read(size)
         if len(buf) < size or (max_frames and n >= max_frames):

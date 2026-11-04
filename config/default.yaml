@@ -114,3 +114,40 @@ title: null                  # topic shown in the title chip; null = from filena
 short:                       # vertical Reel / Short pipeline
   grain: 6.0
   workers: 4                 # render in this many parallel pieces (needs CPU cores; NVENC allows several sessions)
+  encode: {cq: 19, maxrate: 18M}   # reel quality (the generic Instagram preset is lighter)
+
+  # Cut-out of the speaker. RVM runs on the original footage; the result is then re-snapped to the
+  # enhanced picture and the old room's colour is removed from his edge.
+  matte:
+    ratio: 0.75              # RVM downsample ratio for ~480p input (0.5 = faster, 1.0 = sees more detail)
+    guide_radius: 8          # guided-filter radius (enhanced pixels)
+    guide_eps: 0.0003        # smaller = follows finer hair edges, larger = smoother
+    lo: 0.10                 # alpha below this becomes fully transparent ...
+    hi: 0.92                 # ... and above this fully opaque
+    feather: 0.8             # final edge softness (pixels)
+    fusion_radius: 90        # foreground colour estimation radius
+
+  # GPU enhancement (needs torch + a CUDA GPU; falls back to a plain upscale without them)
+  enhance:
+    enabled: auto            # auto | off
+    scale: 2.7               # size of the subject layer relative to the source (2.7 -> 1296x2290 from 480x848)
+    denoise: 0.5             # 0 = strongest clean-up of compression blocks, 1 = none (WhatsApp clips: 0.4-0.6)
+    texture: 0.22            # share of the plain upscale mixed back so skin does not look waxy
+    temporal: 0.55           # smoothing of fine detail between frames (0 = off): stops shimmer
+    qp: 10                   # quality of the intermediate enhanced video (lower = better, bigger)
+    stabilize: true          # steady hand-held footage shots (talk shots are left alone)
+    stab_sigma: 15           # frames of camera-path smoothing
+    stab_limit: 0.03         # largest correction, as a share of the frame width
+    stab_zoom: 1.07          # crop-in that hides the edges a correction reveals
+
+  # Hand-held footage problems. Swings, blur and exposure jolts are cut when nothing is said over
+  # them; when he talks over them the last good frame is held (slowly pushed in) and the plan flags it.
+  footage:
+    check: true
+    whip_px: 14              # camera step (px per frame at 480 wide) that is a swing, not a pan
+    blur_ratio: 0.55         # sharpness below this share of its recent median counts as blur
+    blur_min_frames: 4
+    luma_jump: 7
+    pad_frames: 3
+    merge_frames: 6
+    speech_cut_max: 0.35     # seconds of speech a bad stretch may hold and still be cut outright

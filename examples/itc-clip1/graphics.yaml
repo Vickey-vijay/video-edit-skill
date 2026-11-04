@@ -21,6 +21,10 @@ stats:
   - {at: 98.6, kicker: "DIVIDEND / YEAR", value: "₹14-15K", side: left, dur: 2.4}
   - {at: 101.6, kicker: "IN 4 YEARS", value: "₹60K", side: right, dur: 2.2}
 
+# the camera was being moved while he said this: words on the background instead of a swinging wall
+cards:
+  - {at: 80.2, lines: ["ONE MORE", "THING"], accent: 1, dur: 2.1}
+
 tags:
   - {at: 58.5, text: "DO YOUR OWN ANALYSIS", dur: 2.8}
   - {at: 64.8, text: "NOT JUST CIGARETTES", dur: 2.4}

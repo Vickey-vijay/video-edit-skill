@@ -5,3 +5,4 @@ numpy
 pillow
 pyyaml
 opencv-python-headless<5
+# torch (CUDA 12.4 build) and onnxruntime-gpu==1.22.0 are installed by setup.ps1 when an NVIDIA GPU is present

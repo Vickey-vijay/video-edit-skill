@@ -416,6 +416,16 @@ def subtract(segs, ranges, min_len=0.25):
     return out
 
 
+def speech_inside(ph, a, b, cut):
+    """Seconds of speech between a and b that the edit would not cut anyway."""
+    tot = 0.0
+    for p in ph.items:
+        s, e = max(p["on"], a), min(p["off"], b)
+        if e > s:
+            tot += sum(y - x for x, y in subtract([[s, e]], cut, min_len=1e-6))
+    return tot
+
+
 def snap_to_phrases(segs, ph, words, removed):
     """A kept piece that starts or ends inside a sound burst should take the whole burst,
     unless a removed word sits in the part being added (a stutter cut inside a phrase)."""
@@ -462,6 +472,7 @@ def make_plan(transcript, wav16k, info, cfg, layout, motion, library, title):
     levels = {"speech": speech, "noise": noise, "floor": max(noise + 6, speech - 26)}
     log(f"levels: speech {speech:.1f} dB, noise {noise:.1f} dB, floor {levels['floor']:.1f} dB")
 
+    footage_log = []
     from .acoustic import Phrases, load_wav
     from . import restarts as R
     ph = Phrases(load_wav(wav16k), env, levels["floor"])
@@ -478,10 +489,56 @@ def make_plan(transcript, wav16k, info, cfg, layout, motion, library, title):
         mid = (w["start"] + w["end"]) / 2
         if any(a <= mid <= b for a, b in ranges):
             removed.setdefault(i, "restart")
+    # hand-held footage problems (swings, blur, exposure jolts): cut when nothing is said over them,
+    # otherwise hold the last good frame under his voice and flag it
+    fcfg = (cfg.get("short") or {}).get("footage") or {}
+    foot_cut, hold_req, card_req = [], [], []
+    for f0, f1, why in cfg.get("footage_ranges") or []:
+        t0, t1 = f0 / fps, f1 / fps
+        sp = speech_inside(ph, t0, t1, ranges)
+        if sp <= float(fcfg.get("speech_cut_max", 0.35)):
+            foot_cut.append((t0, t1))
+            footage_log.append({"frames": [f0, f1], "why": why, "action": "cut", "speech": round(sp, 2)})
+        elif why in ("interlude", "whip", "lost"):
+            # the picture is unusable but he is speaking: keep his words on a branded background
+            spans = []
+            for p in ph.items:
+                a, b = max(p["on"] - 0.06, t0), min(p["off"] + 0.10, t1)
+                if b - a > 0.15 and speech_inside(ph, a, b, ranges) > 0.1:
+                    spans.append([a, b])
+            foot_cut += [tuple(x) for x in subtract([[t0, t1]], spans, min_len=1e-6)]
+            card_req += spans
+            footage_log.append({"frames": [f0, f1], "why": why, "action": "card", "speech": round(sp, 2)})
+        else:
+            hold_req.append((f0, f1, why, sp))
+    ranges = ranges + foot_cut
     raw, kept_noise = build_segments(words, removed, env, duration, c, levels)
     raw = snap_to_phrases(subtract(raw, ranges), ph, words, removed)
     raw = subtract(raw, ranges + pauses)
     frames = snap(raw, fps, duration)
+    holds = []
+    for f0, f1, why, sp in hold_req:
+        soft = False
+        for a, b in frames:
+            lo, hi = max(a, f0), min(b, f1)
+            if hi <= lo:
+                continue
+            if lo <= a:          # starts a piece: hold the first sharp frame after it, if the piece has one
+                if hi < b:
+                    holds.append([lo, hi, 1])
+                else:
+                    soft = True
+            else:
+                holds.append([lo, hi, 0])
+        footage_log.append({"frames": [f0, f1], "why": why, "speech": round(sp, 2),
+                            "action": "kept soft" if soft else "hold"})
+    cards = []
+    for a0, b0 in card_req:
+        f0, f1 = int(math.floor(a0 * fps)), int(math.ceil(b0 * fps))
+        for a, b in frames:
+            lo, hi = max(a, f0), min(b, f1)
+            if hi > lo:
+                cards.append([lo, hi])
     tl = Timeline(frames, fps)
 
     # cuts between kept pieces, with the reasons for each
@@ -544,6 +601,7 @@ def make_plan(transcript, wav16k, info, cfg, layout, motion, library, title):
     return {"version": 2, "fps": fps, "title": title, "language": transcript.get("language"),
             "restarts": restarts, "phrases": phrases, "cut_ranges": [list(r) for r in ranges],
             "cues": make_cues(ph, tl, words, removed),
+            "holds": holds, "cards": cards, "footage": footage_log,
             "info": info, "levels": levels, "layout": layout, "segments": frames,
             "duration": round(tl.duration, 3), "cuts": cuts, "words": words,
             "captions": groups, "zooms": zooms, "broll": broll, "stats": stats}

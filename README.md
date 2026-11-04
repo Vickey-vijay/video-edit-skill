@@ -23,7 +23,8 @@ Instagram Reels (1080×1920), the same way every time:
 ## Setup (once per PC)
 
 Needs Windows, Python 3.10+, ffmpeg (full build) on PATH, and an NVIDIA GPU (falls back to
-CPU, much slower).
+CPU, much slower, and the Reel pipeline then skips the enhancement). The GPU stack is torch
+(CUDA 12.4) plus `onnxruntime-gpu==1.22.0` (about 3 GB, installed by `setup.ps1`).
 
 ```
 powershell -ExecutionPolicy Bypass -File setup.ps1
@@ -74,11 +75,18 @@ Worked examples of the review decisions, graphics spec and English captions: `ex
 | File | Does |
 |---|---|
 | `vedit/restarts.py`, `vedit/acoustic.py` | false-start detection from phonetic text matching plus audio similarity (MFCC + time warping); decisions by time |
-| `vedit/matte.py` | Robust Video Matting (ONNX) run over the whole clip; conform to constant frame rate |
+| `vedit/matte.py` | Robust Video Matting (ONNX, GPU) run over the whole clip; conform to constant frame rate |
+| `vedit/footage.py` | hand-held footage checks: swings, blur, exposure jolts, camera interludes; camera-path stabilisation |
+| `vedit/enhance.py` | GPU pass: Real-ESRGAN super-resolution, steadier shots, matte re-snapped to the picture (guided filter) and old-room colour removed from his edge (Blur-Fusion) |
 | `vedit/backgrounds.py` | gold / market / studio procedural backgrounds |
 | `vedit/motion.py`, `vedit/fx.py` | hook behind the subject, stickers, tags, end card, captions; easing, text sprites |
 | `vedit/shorts.py`, `vedit/reel.py` | compositor (matte, light wrap, grade, grain) and orchestration |
 | `vedit/sfx.py` | synthesised whooshes, pops and impacts mixed under the voice |
 | `vedit/captions_en.py` | English caption timing; SRT export |
 
-Commands: `restarts`, `decide`, `qa`, `cues`, `translate`, `preview`, then `render`.
+Commands: `restarts`, `decide`, `qa`, `cues`, `translate`, `footage`, `preview`, then `render`.
+
+Quality settings live under `short:` in `config/default.yaml` (`matte`, `enhance`, `footage`, `encode`).
+The render is 1080x1920 at about 16 Mbps, BT.709-tagged. Hand-held problems are handled automatically:
+swings and blur are cut, words spoken over an unusable picture go on a branded background ("card"),
+and shake on screen footage is smoothed. Details: "Hand-held footage" in `skill/SKILL.md`.
