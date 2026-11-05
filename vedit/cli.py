@@ -289,6 +289,15 @@ def cmd_qa(a):
     qa.mkdir(exist_ok=True)
     wav = qa / "edited16k.wav"
     run(["ffmpeg", "-y", "-v", "error", "-i", wd / "cut_audio.wav", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav])
+    # The transcript cache is keyed by settings only, so a transcript of an EARLIER edit would be reused and the
+    # check would describe the wrong audio. Key it to the edited audio itself.
+    import hashlib
+    digest = hashlib.sha1(wav.read_bytes()).hexdigest()
+    stamp = qa / "transcript.audio.sha1"
+    if not stamp.exists() or stamp.read_text().strip() != digest:      # unknown or different audio: do not trust the cache
+        (qa / "transcript.json").unlink(missing_ok=True)
+        log("transcribing the edited audio afresh")
+    stamp.write_text(digest)
     tr = transcribe(wav, cfg["whisper"], qa / "transcript.json")
     words = merge_numbers([dict(w) for w in tr["words"]])
     env = envelope(wav)
@@ -389,6 +398,83 @@ def cmd_footage(a):
         for h in plan.get("footage", []):
             print(f"  plan: {h['action']:5s} {h['frames'][0] / fps:.2f}-{h['frames'][1] / fps:.2f}s ({h['why']}, speech {h['speech']}s)")
         print(f"  frames held under speech: {sum(b - a0 for a0, b in plan.get('holds', []))}")
+
+
+def cmd_understand(a):
+    """Have Gemini watch and listen to the raw clip and judge every speech phrase (keep / cut, and why)."""
+    from . import understand as U
+    video = Path(a.video).resolve()
+    cfg = load_config(video, a.config, parse_set(a.set))
+    wd = work_dir(video)
+    uc = cfg.get("understand", {})
+    model = a.model or uc.get("model", "gemini-pro-latest")
+    target = a.target or uc.get("target_seconds", "60-80")
+    key = U.api_key()
+    if a.list_models:
+        if not key:
+            print("no API key: set GEMINI_API_KEY or save it in", U.KEY_FILE)
+            return
+        print("\n".join(U.list_models(key)))
+        return
+    plan = load_json(wd / "plan.json")
+    prompt = U.build_prompt(plan, target)
+    if a.prompt_only:
+        out = wd / "understand_prompt.txt"
+        out.write_text(prompt, encoding="utf-8")
+        print(f"prompt written: {out}\nOpen https://aistudio.google.com, pick the strongest Gemini model, attach the ORIGINAL video "
+              f"({video}), paste the prompt, run it, save the JSON reply as {wd / 'understand_reply.json'} and run:\n"
+              f"  understand \"{video}\" --from-json \"{wd / 'understand_reply.json'}\"")
+        return
+    saved = wd / "understanding.json"
+    if a.from_json:
+        result = U.parse(Path(a.from_json).read_text(encoding="utf-8"))
+    elif saved.exists() and not a.fresh:
+        result = load_json(saved)["result"]
+        log(f"using the saved analysis {saved} (--fresh asks again)")
+    else:
+        if not key:
+            print("No Gemini API key found. Either save the key (just the key) in", U.KEY_FILE, "or set GEMINI_API_KEY,\n"
+                  "or use --prompt-only and paste the prompt into Google AI Studio yourself.")
+            return
+        try:
+            raw = U.ask(video, prompt, model, key)
+        except Exception as e:                          # noqa: BLE001
+            fb = uc.get("fallback_model")
+            if fb and fb != model and "RESOURCE_EXHAUSTED" in str(e):
+                log(f"{model} has no quota on this key (a free key has none for Pro models); trying {fb}")
+                model = fb
+                raw = U.ask(video, prompt, model, key)
+            else:
+                raise
+        raw_path = wd / "understand_reply_raw.txt"      # keep the paid-for answer even if it does not parse
+        raw_path.write_text(raw or "", encoding="utf-8")
+        log(f"Gemini's raw reply saved: {raw_path} ({len(raw or '')} characters)")
+        result = U.parse(raw)
+    save_json(saved, {"model": model, "target": target, "result": result})
+    by, problems = U.normalise(result, plan)
+    print(U.review_text(result, plan, by, problems))
+    if a.refine:
+        if not key:
+            print("--refine needs an API key")
+        else:
+            ref = U.refine(by, plan, target, uc.get("refine_model", "gemini-flash-latest"), key)
+            save_json(wd / "understanding_refined.json", ref)
+            print("\nSECOND PASS: keep", ref.get("keep"), "\n  cut", ref.get("cut"), "\n  dangling", ref.get("dangling"),
+                  "\n  notes", ref.get("notes"))
+    if a.apply:
+        d = U.apply(wd, plan, by)
+        log(f"decisions written to {wd / 'decisions.json'} (cut_at {len(d['cut_at'])}, keep_at {len(d['keep_at'])}, "
+            f"trims {len(d['cuts'])}); the earlier file is kept as decisions.before_gemini.json")
+        if a.replan:
+            build_plan(video, cfg, wd)
+        else:
+            print(f'next: run "{video}" --stop-after plan, then qa, cues / translate (or understand --captions), render')
+    if a.captions:
+        plan = load_json(wd / "plan.json")
+        en, multi = U.english_for_cues(plan, by)
+        save_json(wd / "captions_en.json", en)
+        log(f"English captions from the analysis: {len(en)} cues written to {wd / 'captions_en.json'}"
+            + (f"; phrases split over several cues need hand translation: {multi}" if multi else ""))
 
 
 def cmd_chunk(a):
@@ -502,6 +588,21 @@ def main(argv=None):
     ft.add_argument("video")
     common(ft)
     ft.set_defaults(fn=cmd_footage)
+
+    un = sub.add_parser("understand", help="have Gemini watch and listen to the raw clip and judge every phrase (keep/cut and why)")
+    un.add_argument("video")
+    un.add_argument("--model")
+    un.add_argument("--target", help='kept length to aim for, seconds, e.g. "60-80"')
+    un.add_argument("--prompt-only", action="store_true", help="write the prompt for Google AI Studio instead of calling the API")
+    un.add_argument("--from-json", help="a reply saved from AI Studio")
+    un.add_argument("--fresh", action="store_true", help="ask again even if understanding.json exists")
+    un.add_argument("--refine", action="store_true", help="second text-only pass: best takes and a dangling-sentence check")
+    un.add_argument("--apply", action="store_true", help="write the keep/cut calls into decisions.json")
+    un.add_argument("--replan", action="store_true", help="with --apply: rebuild the plan straight away")
+    un.add_argument("--captions", action="store_true", help="write English captions from the analysis (after re-planning)")
+    un.add_argument("--list-models", action="store_true")
+    common(un)
+    un.set_defaults(fn=cmd_understand)
 
     pv = sub.add_parser("preview", help="render single frames (edited seconds) of the reel to PNG")
     pv.add_argument("video")

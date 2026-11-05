@@ -23,6 +23,26 @@ the text. Tamil particles such as ஆ / ஏ are grammar, not fillers.
    (~3 GB). Transcribing 2.5 min takes ~4 min on the RTX 3050. The plan step also checks the hand-held
    footage (see "Hand-held footage" below): the log line `hand-held footage: ...` lists the swings, blur and
    camera interludes it found; `footage "<video>"` prints them with what the edit does about each.
+1b. **Let a model that can listen judge the content** (`understand`). The sound-based cutter below only
+   finds repeats and pauses; it cannot tell that a sentence stalled, that the same point is made twice, or
+   that a stretch is a filler or an aside, and the Whisper Tamil text is too poor for me to judge meaning.
+   Google Gemini takes the raw video with its Tamil audio and judges every speech phrase (what he really
+   says, complete thought / false start / stalled / filler / repeat of another phrase / aside, keep or cut,
+   why). The cuts are still made on the audio-detected phrase windows, never on Gemini's own timestamps.
+   `understand "<video>" --prompt-only` writes the prompt (no upload); with a key (environment variable
+   `GEMINI_API_KEY` or `Gemini_API`, or the key alone in `%USERPROFILE%\.video-edit-skill\gemini.key`)
+   `understand "<video>"` uploads the clip, asks, and deletes the upload again. A FREE Google key has no
+   quota for the Pro models (429, limit 0): the command then falls back to `understand.fallback_model`
+   (Gemini 3.6 Flash, verified on clip 1) and a paid key gets `gemini-pro-latest`. Gemini's raw reply is
+   kept in `understand_reply_raw.txt` so a parsing problem never costs another upload. When applying,
+   hand trims made earlier inside phrases that Gemini keeps are preserved. Either way the answer is stored in `understanding.json` and printed
+   as a table. READ IT: check each `[CHECK: ...]` flag, the repeats (is the dropped take really worse?),
+   the cut phrases, and read only the kept English in order as one script to see whether it flows.
+   `--refine` adds a text-only second pass (best takes, dangling sentences). When it is right,
+   `understand "<video>" --apply --replan` writes cut_at / keep_at / trims into `decisions.json` (the old
+   file is kept) and rebuilds the plan; later `understand "<video>" --captions` fills English captions from
+   the analysis. Only send a client's raw clip when the client has said yes (the user approved this for
+   Nagarajan's clips on 2026-11-05).
 2. **Review the cuts**: `restarts "<video>"` prints every speech phrase (P#, times, text, `*` = cut) and
    every false-start candidate with its evidence (text coverage, audio similarity cost: repeats are
    usually 27-40, unrelated phrases ~50; TRUNCATED = cut off mid-word). Read ALL phrases, not just the

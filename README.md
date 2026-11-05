@@ -76,6 +76,7 @@ Worked examples of the review decisions, graphics spec and English captions: `ex
 |---|---|
 | `vedit/restarts.py`, `vedit/acoustic.py` | false-start detection from phonetic text matching plus audio similarity (MFCC + time warping); decisions by time |
 | `vedit/matte.py` | Robust Video Matting (ONNX, GPU) run over the whole clip; conform to constant frame rate |
+| `vedit/understand.py` | Gemini watches and listens to the raw clip and judges every speech phrase (keep / cut, stalled, repeat, filler); applied through `decisions.json`; `understand --prompt-only` works without an API key |
 | `vedit/footage.py` | hand-held footage checks: swings, blur, exposure jolts, camera interludes; camera-path stabilisation |
 | `vedit/enhance.py` | GPU pass: Real-ESRGAN super-resolution, steadier shots, matte re-snapped to the picture (guided filter) and old-room colour removed from his edge (Blur-Fusion) |
 | `vedit/backgrounds.py` | gold / market / studio procedural backgrounds |
@@ -84,7 +85,7 @@ Worked examples of the review decisions, graphics spec and English captions: `ex
 | `vedit/sfx.py` | synthesised whooshes, pops and impacts mixed under the voice |
 | `vedit/captions_en.py` | English caption timing; SRT export |
 
-Commands: `restarts`, `decide`, `qa`, `cues`, `translate`, `footage`, `preview`, then `render`.
+Commands: `restarts`, `decide`, `qa`, `cues`, `translate`, `understand`, `footage`, `preview`, then `render`.
 
 Quality settings live under `short:` in `config/default.yaml` (`matte`, `enhance`, `footage`, `encode`).
 The render is 1080x1920 at about 16 Mbps, BT.709-tagged. Hand-held problems are handled automatically:

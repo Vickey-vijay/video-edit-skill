@@ -111,6 +111,12 @@ encoder: auto                # auto (NVENC if available) | nvenc | x264
 
 title: null                  # topic shown in the title chip; null = from filename
 
+understand:                  # `understand`: Gemini watches and listens, judges every phrase
+  model: gemini-pro-latest   # the strongest Gemini the key can use; any name from `understand --list-models`
+  fallback_model: gemini-3.6-flash   # used when the key has no quota for the model above (a free key has none for Pro)
+  refine_model: gemini-flash-latest
+  target_seconds: "60-80"    # kept length to aim for (a range; the argument comes first)
+
 short:                       # vertical Reel / Short pipeline
   grain: 6.0
   workers: 4                 # render in this many parallel pieces (needs CPU cores; NVENC allows several sessions)
