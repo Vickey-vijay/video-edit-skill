@@ -19,6 +19,10 @@ IVORY = (226, 239, 246)
 GOLD = (60, 194, 255)
 GOLD_HI = (138, 224, 255)
 GOLD_LO = (20, 120, 210)
+BRASS = (91, 161, 201)          # #C9A15B, the one accent
+BRASS_HI = (140, 196, 232)
+IVORY2 = (238, 246, 250)
+MUTED = (196, 188, 170)
 UP = (110, 200, 70)
 DOWN = (60, 70, 225)
 
@@ -27,6 +31,12 @@ DOWN = (60, 70, 225)
 
 def clamp01(x):
     return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def smooth01(x):
+    """smoothstep of an array already scaled so 0..1 is the ramp."""
+    x = np.clip(x, 0.0, 1.0)
+    return x * x * (3 - 2 * x)
 
 
 def ease_out_cubic(x):
@@ -231,6 +241,88 @@ def grade(img, contrast=1.10, saturation=1.06, warmth=0.035, lift=2.0):
     x[..., 0] *= 1 - warmth * 0.9
     img[:] = np.clip(x * 255.0 + lift, 0, 255)
     return img
+
+
+def finish(img, halation=0.05, saturation=0.94):
+    """The last look over the whole composite (in place): shadows lean cool, highlights warm, a touch less
+    colour so the yellow hoodie does not shout, and a faint warm bloom around the brightest areas."""
+    x = img / 255.0
+    luma = (x[..., 0] * 0.114 + x[..., 1] * 0.587 + x[..., 2] * 0.299)
+    sh = 1 - smooth01(luma / 0.45)
+    hi = smooth01((luma - 0.55) / 0.45)
+    x[..., 0] += 0.010 * sh - 0.007 * hi
+    x[..., 2] += -0.003 * sh + 0.009 * hi
+    l3 = luma[..., None]
+    x = l3 + (x - l3) * saturation
+    if halation > 0:
+        bright = np.clip(luma - 0.72, 0, 1)
+        h, w = bright.shape
+        sm = cv2.resize(bright, (w // 8, h // 8), interpolation=cv2.INTER_AREA)
+        sm = cv2.resize(cv2.GaussianBlur(sm, (0, 0), 3.0), (w, h), interpolation=cv2.INTER_LINEAR)
+        x += sm[..., None] * np.array((0.55, 0.75, 1.0), np.float32) * halation * 3.0
+    img[:] = np.clip(x * 255.0, 0, 255)
+    return img
+
+
+# ------------------------------------------------------------------ premium kit: halo text, frosted panels
+
+def with_halo(sprite, blur=9, a=0.55):
+    """Premultiplied BGRA sprite with a soft dark halo behind it (legible without an outline)."""
+    pad = int(blur * 3)
+    h, w = sprite.shape[:2]
+    big = np.zeros((h + 2 * pad, w + 2 * pad, 4), np.float32)
+    big[pad:pad + h, pad:pad + w] = sprite
+    halo = cv2.GaussianBlur(big[..., 3], (0, 0), blur) * a
+    big[..., 3] = big[..., 3] + halo * (1 - big[..., 3])
+    return big
+
+
+class Panel:
+    """A label: solid near-black fill, a brass hairline and a soft shadow, small corner radius (printed, not UI).
+    `frost=True` gives the frosted-glass variant instead (backdrop blurred and tinted); it reads as a UI card, so it is
+    off by default. Draw text sprites over it yourself."""
+
+    def __init__(self, w, h, radius=8, fill=(10, 10, 11), fill_a=0.92, edge=BRASS, edge_a=0.60, shadow=0.38, pad=44,
+                 frost=False, dark=0.46, blur=14, tint=(24, 16, 10)):
+        self.w, self.h, self.pad, self.blur, self.dark, self.frost = int(w), int(h), pad, blur, dark, frost
+        self.tint = np.array(tint, np.float32)
+        S = 2
+        W_, H_ = self.w + 2 * pad, self.h + 2 * pad
+        m = Image.new("L", (W_ * S, H_ * S), 0)
+        ImageDraw.Draw(m).rounded_rectangle([pad * S, pad * S, (pad + self.w) * S - 1, (pad + self.h) * S - 1], radius=radius * S, fill=255)
+        full = np.asarray(m.resize((W_, H_), Image.LANCZOS), np.float32) / 255.0
+        self.mask = full[pad:pad + self.h, pad:pad + self.w].copy()
+        ring = np.clip(full - cv2.erode(full, np.ones((3, 3), np.uint8)), 0, 1)
+        sh = cv2.GaussianBlur(np.roll(full, 12, axis=0), (0, 0), 20) * shadow * (1 - full)
+        sp = np.zeros((H_, W_, 4), np.float32)
+        if not frost:
+            pa = full * fill_a
+            sp[..., :3] = np.array(fill, np.float32) * pa[..., None]
+            sp[..., 3] = pa + sh * (1 - pa)
+        else:
+            sp[..., 3] = sh
+        ea = ring * edge_a
+        sp[..., :3] = np.array(edge, np.float32) * ea[..., None] + sp[..., :3] * (1 - ea[..., None])
+        sp[..., 3] = ea + sp[..., 3] * (1 - ea)
+        self.sprite = sp
+
+    def draw(self, canvas, cx, cy, alpha=1.0):
+        """(Frosted: backdrop blur + tint inside the panel,) then the label with its rim and shadow."""
+        x0, y0 = int(round(cx - self.w / 2)), int(round(cy - self.h / 2))
+        if self.frost:
+            H_, W_ = canvas.shape[:2]
+            X0, Y0, X1, Y1 = max(x0, 0), max(y0, 0), min(x0 + self.w, W_), min(y0 + self.h, H_)
+            if X1 > X0 and Y1 > Y0 and alpha > 0.003:
+                roi = canvas[Y0:Y1, X0:X1]
+                m = self.mask[Y0 - y0:Y1 - y0, X0 - x0:X1 - x0, None] * alpha
+                glass = cv2.GaussianBlur(roi, (0, 0), self.blur) * (1 - self.dark) + self.tint * self.dark
+                roi[:] = roi * (1 - m) + glass * m
+        blit(canvas, self.sprite, x0 + self.w / 2, y0 + self.h / 2, alpha=alpha)
+        return x0, y0
+
+
+def text_halo(text, face="sans", size=60, fill=IVORY2, tracking=0, blur=9, a=0.5):
+    return with_halo(text_sprite(text, face, size, fill=fill, tracking=tracking), blur, a)
 
 
 def unsharp(img, amount=0.55, sigma=1.4):

@@ -118,7 +118,32 @@ understand:                  # `understand`: Gemini watches and listens, judges 
   target_seconds: "60-80"    # kept length to aim for (a range; the argument comes first)
 
 short:                       # vertical Reel / Short pipeline
-  grain: 6.0
+  # The look ("After Hours"): one calm warm-graphite room with an amber light low right; the themes market / gold / studio
+  # (graphics.yaml `theme` / `themes`) only swap one mid-layer: glass with a price path / a banknote rosette / nothing.
+  palette: graphite          # graphite (warm neutral slate, amber light, brass) | ink (blue-black)
+  grain: 3.6                 # film grain over everything (levels of 255, rms)
+  vignette: 0.30
+  caption_scrim: 0.42        # darkening of the bottom 40% so captions and the hoodie logo do not fight
+  finish:                    # last look over the composite
+    saturation: 0.94         # a touch less colour so the yellow hoodie does not shout
+    halation: 0.05           # faint warm bloom around the brightest areas
+  # Setting him into the scene (vedit/edge.py, vedit/shorts.py Subject.layer). All work per frame, no state.
+  edge:
+    lo: 0.32                 # matte below this is gone, above `hi` is solid: a decisive edge, the ghost of a moving head is cut
+    hi: 0.88
+    feather: 1.0             # px of anti-aliasing on the edge
+    hair_dark: 0.15          # darken the hair edge so it melts into the dark room instead of showing a grey rim
+    wrap: 0.16               # light wrap of the room's own light onto his edge (body)
+    wrap_hair: 0.07          # ... and onto the hair
+    rim: 0.10                # rim light from the key light (top left) on edges that face it
+    rim_hair: 0.045
+    shadow: 0.30             # soft shadow on the room behind him
+    glow: 0.07               # warm glow behind the shoulders (never behind the head)
+  skin:
+    enabled: true            # pull skin-like pixels toward a healthy brown (the phone lights one cheek blue-grey)
+    strength: 0.65
+    lift: 6.0                # gentle shadow lift on skin
+    tame_yellow: 0.12        # take a little chroma out of the mustard hoodie
   workers: 4                 # render in this many parallel pieces (needs CPU cores; NVENC allows several sessions)
   encode: {cq: 19, maxrate: 18M}   # reel quality (the generic Instagram preset is lighter)
 

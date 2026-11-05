@@ -203,8 +203,12 @@ def parse(text):
         if a < 0 or b <= a:
             raise
         out = json.loads(t[a:b + 1])
-    if isinstance(out, list):                        # some models answer with the bare list of phrases
-        out = {"phrases": out}
+    if isinstance(out, list):
+        # some models answer with a bare list of phrases, others wrap the whole analysis in a one-item list
+        if len(out) == 1 and isinstance(out[0], dict) and "phrases" in out[0]:
+            out = out[0]
+        else:
+            out = {"phrases": out}
     return out
 
 

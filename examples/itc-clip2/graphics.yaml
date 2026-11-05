@@ -10,14 +10,14 @@ hook:
   dur: 3.2
 
 stats:
-  - {at: 16.0, kicker: "GOLDEN RATIO", value: "0.618", side: right, y: 0.19, dur: 2.8}
-  - {at: 45.0, kicker: "P/E", value: "16.9", sub: "INDUSTRY 42.8", side: left, y: 0.19, dur: 3.0}
-  - {at: 51.8, kicker: "ROCE", value: "38.9%", sub: "ROE 29.3%", side: right, y: 0.19, dur: 2.6}
-  - {at: 69.6, kicker: "DEBT / EQUITY", value: "0.03", side: left, y: 0.19, dur: 2.8}
-  - {at: 79.0, kicker: "INTRINSIC VALUE", value: "₹263", sub: "PRICE ₹266", side: right, y: 0.19, dur: 3.2}
+  - {at: 16.0, kicker: "GOLDEN RATIO", value: "0.618", side: right, y: 0.155, dur: 2.8}
+  - {at: 45.0, kicker: "P/E", value: "16.9", sub: "INDUSTRY 42.8", side: left, y: 0.155, dur: 3.0}
+  - {at: 51.8, kicker: "ROCE", value: "38.9%", sub: "ROE 29.3%", side: right, y: 0.155, dur: 2.6}
+  - {at: 69.6, kicker: "DEBT / EQUITY", value: "0.03", side: left, y: 0.155, dur: 2.8}
+  - {at: 79.0, kicker: "INTRINSIC VALUE", value: "₹263", sub: "PRICE ₹266", side: right, y: 0.155, dur: 3.2}
 
 tags:
-  - {at: 103.8, text: "RSI AT THE 30 LEVEL", y: 0.19, dur: 2.8}
+  - {at: 103.8, text: "RSI AT THE 30 LEVEL", dur: 2.8}
   - {at: 133.0, text: "ACCUMULATE GRADUALLY", dur: 2.6}
 
 cta: {text: "BUY OR SELL?", sub: "Tell me in the comments", dur: 2.4}

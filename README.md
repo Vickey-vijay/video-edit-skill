@@ -79,15 +79,16 @@ Worked examples of the review decisions, graphics spec and English captions: `ex
 | `vedit/understand.py` | Gemini watches and listens to the raw clip and judges every speech phrase (keep / cut, stalled, repeat, filler); applied through `decisions.json`; `understand --prompt-only` works without an API key |
 | `vedit/footage.py` | hand-held footage checks: swings, blur, exposure jolts, camera interludes; camera-path stabilisation |
 | `vedit/enhance.py` | GPU pass: Real-ESRGAN super-resolution, steadier shots, matte re-snapped to the picture (guided filter) and old-room colour removed from his edge (Blur-Fusion) |
-| `vedit/backgrounds.py` | gold / market / studio procedural backgrounds |
-| `vedit/motion.py`, `vedit/fx.py` | hook behind the subject, stickers, tags, end card, captions; easing, text sprites |
-| `vedit/shorts.py`, `vedit/reel.py` | compositor (matte, light wrap, grade, grain) and orchestration |
+| `vedit/backgrounds.py` | the "After Hours" room in warm graphite + amber + brass: market (glass + price path) / gold (banknote rosette) / studio (light and haze); camera drift and a step at every cut; `short.palette: ink` for blue-black |
+| `vedit/edge.py` | finishing of the cut-out: decisive matte, colour from inside, skin balance, yellow tamed |
+| `vedit/motion.py`, `vedit/fx.py` | hook above his head, printed-label stat cards and tags, italic end card, plain captions; easing, text sprites, finish grade |
+| `vedit/shorts.py`, `vedit/reel.py` | compositor (edge, light wrap, rim, shadow, glow, finish, caption scrim, grain) and orchestration |
 | `vedit/sfx.py` | synthesised whooshes, pops and impacts mixed under the voice |
 | `vedit/captions_en.py` | English caption timing; SRT export |
 
 Commands: `restarts`, `decide`, `qa`, `cues`, `translate`, `understand`, `footage`, `preview`, then `render`.
 
-Quality settings live under `short:` in `config/default.yaml` (`matte`, `enhance`, `footage`, `encode`).
+Quality and look settings live under `short:` in `config/default.yaml` (`matte`, `enhance`, `footage`, `encode`, `edge`, `skin`, `finish`, `grain`, `caption_scrim`).
 The render is 1080x1920 at about 16 Mbps, BT.709-tagged. Hand-held problems are handled automatically:
 swings and blur are cut, words spoken over an unusable picture go on a branded background ("card"),
 and shake on screen footage is smoothed. Details: "Hand-held footage" in `skill/SKILL.md`.

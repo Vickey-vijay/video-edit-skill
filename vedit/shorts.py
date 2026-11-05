@@ -9,7 +9,7 @@ import subprocess
 import cv2
 import numpy as np
 
-from . import backgrounds, fx, motion
+from . import backgrounds, edge, fx, motion
 from .plan import Timeline
 from .util import log
 
@@ -37,19 +37,36 @@ def classify_scenes(conform, alpha, info, fps):
 
 # ------------------------------------------------------------------ subject
 
+def _soft(a, sigma, scale=8):
+    """Gaussian blur of a one- or three-channel image, done at 1/scale size (cheap for big sigmas)."""
+    h, w = a.shape[:2]
+    small = cv2.resize(a, (max(1, w // scale), max(1, h // scale)), interpolation=cv2.INTER_AREA)
+    small = cv2.GaussianBlur(small, (0, 0), sigma / scale)
+    return cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)
+
+
 class Subject:
-    """Turns a matted frame into a 1080x1920 layer, with zoom about the face.
+    """Turns a matted frame into a 1080x1920 layer, with zoom about the face, and sets him into the scene.
 
-    `refined` layers come from the enhance pass (already sharp, matte snapped to the picture,
-    old-room colour removed from the edge); the plain 480x848 originals take the older route
-    (stretch, tighten the matte, sharpen)."""
+    `refined` layers come from the enhance pass (already sharp, matte snapped to the picture); the
+    plain 480x848 originals take the older route (stretch, tighten the matte, sharpen). Either way
+    the cut-out is finished the same way (see edge.py): a decisive matte, colour from inside, skin
+    balance; then the integration: hair edge darkening, a little of the new background wrapped onto
+    his edge, a rim from the key light, a soft shadow and a warm glow in the scene behind him."""
 
-    def __init__(self, src_w, src_h, face=(0.5, 0.33), refined=False):
+    def __init__(self, src_w, src_h, face=(0.5, 0.33), refined=False, cfg=None):
         self.sw, self.sh = src_w, src_h
         self.face = face
         self.refined = refined
         self.k = H / src_h                           # cover scale
         self.er = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        sc = (cfg or {}).get("short", {})
+        self.ec = {"lo": 0.32, "hi": 0.88, "feather": 1.0, "wrap": 0.16, "wrap_hair": 0.07, "rim": 0.10, "rim_hair": 0.045,
+                   "hair_dark": 0.15, "shadow": 0.30, "glow": 0.07, **sc.get("edge", {})}
+        self.skin = {"enabled": True, "strength": 0.65, "lift": 6.0, "tame_yellow": 0.12, **sc.get("skin", {})}
+        yy = np.arange(H, dtype=np.float32)
+        self.head_w = (1 - edge.smooth(yy, 0.40 * H, 0.52 * H))[:, None]      # 1 around the head, 0 on the shoulders
+        self.low_w = edge.smooth(yy, 0.40 * H, 0.62 * H)[:, None]
 
     def _scaled(self, img, zoom, cx, cy, up, cyfrac):
         k = self.k * zoom
@@ -62,24 +79,40 @@ class Subject:
             out = cv2.resize(out, (W, H))
         return out
 
-    def layer(self, rgb, alpha, zoom, bg_blur):
+    def layer(self, rgb, alpha, zoom, canvas, key=(-0.6, -0.8)):
+        """Returns (colour, alpha) for compositing onto `canvas`; the canvas is darkened/lit in place for the
+        shadow and glow behind him. `key` is the direction toward the key light (x right, y down)."""
+        e = self.ec
         rgb_b = self._scaled(rgb, zoom, self.face[0], self.face[1], cv2.INTER_LANCZOS4, 0.36).astype(np.float32)
         a_b = self._scaled(alpha, zoom, self.face[0], self.face[1], cv2.INTER_CUBIC, 0.36).astype(np.float32) / 255
-        if self.refined:
-            a_b = cv2.GaussianBlur(a_b, (0, 0), 0.6)
-            rgb_b = fx.unsharp(rgb_b, 0.25, 1.1)
-            wrap = 0.40
-        else:
-            # tighten the matte: pull the soft edge in a hair so the old room never shows as a halo
-            a_b = np.clip((a_b - 0.10) / 0.80, 0, 1)
-            a_in = cv2.erode(a_b, self.er)
-            a_b = cv2.GaussianBlur(a_in, (0, 0), 1.0)
-            rgb_b = fx.unsharp(rgb_b, 0.6, 1.3)
-            wrap = 0.55
-        fx.grade(rgb_b, contrast=1.12, saturation=1.08, warmth=0.03)
-        # light wrap: a little of the new background bleeds onto his edge, so he sits in the scene
-        edge = np.clip(a_b - cv2.erode(a_b, np.ones((15, 15), np.uint8)), 0, 1)[..., None]
-        rgb_b += bg_blur * edge * wrap
+        rgb_b = fx.unsharp(rgb_b, 0.22 if self.refined else 0.6, 1.1 if self.refined else 1.3)
+        rgb_b, a_b = edge.refine(rgb_b, a_b, e["lo"], e["hi"], e["feather"])
+        if self.skin.get("enabled", True):
+            edge.skin_balance(rgb_b, 0.16 * H, 0.56 * H, self.skin["strength"], lift=self.skin["lift"])
+            edge.tame_yellow(rgb_b, 0.40 * H, self.skin["tame_yellow"])
+        fx.grade(rgb_b, contrast=1.10, saturation=1.03, warmth=0.012)
+        # the edge band: 0 inside, about 1 at the border
+        eb = np.clip(2.4 * a_b * (1 - cv2.GaussianBlur(a_b, (0, 0), 4.0)), 0, 1)
+        lum = rgb_b.mean(axis=2) / 255.0
+        hair = (lum < 0.24).astype(np.float32) * self.head_w
+        # 1. hair dissolves into the dark room instead of showing a grey rim
+        rgb_b *= (1 - e["hair_dark"] * eb * hair)[..., None]
+        # 2. light wrap: the room's own light on his edge (less on hair)
+        wrap_src = _soft(canvas, 22, 4)
+        rgb_b += wrap_src * (eb * (e["wrap"] * (1 - hair) + e["wrap_hair"] * hair))[..., None]
+        # 3. rim from the key light (top left): where the edge faces the light
+        g = cv2.GaussianBlur(a_b, (0, 0), 3.0)
+        gx, gy = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
+        mag = np.sqrt(gx * gx + gy * gy) + 1e-6
+        facing = np.clip(-gx / mag * key[0] - gy / mag * key[1], 0, 1)
+        rim = facing * eb * (e["rim"] * (1 - hair) + e["rim_hair"] * hair)
+        rgb_b += rim[..., None] * np.array((154, 199, 232), np.float32)
+        # 4. soft contact shadow, offset away from the key (weaker around the head: hair must stay lighter than the room)
+        sh = cv2.warpAffine(_soft(a_b, 40), np.float32([[1, 0, 18], [0, 1, 24]]), (W, H), borderMode=cv2.BORDER_REPLICATE)
+        canvas *= (1 - e["shadow"] * sh * (0.45 + 0.55 * self.low_w))[..., None]
+        # 5. warm glow behind the shoulders, never behind the head
+        gl = _soft(a_b * self.low_w, 110, 8)
+        canvas += gl[..., None] * np.array((70, 115, 170), np.float32) * (e["glow"] * 255 / 255.0) * 2.2
         return rgb_b, a_b[..., None]
 
     def footage(self, rgb, zoom, cx=0.5, cy=0.5):
@@ -100,16 +133,22 @@ class Shorts:
         self.talk = talk
         self.enh = enh                      # enhanced layers {rgb, alpha, w, h} or None (use the originals)
         if enh:
-            self.subject = Subject(enh["w"], enh["h"], face, refined=True)
+            self.subject = Subject(enh["w"], enh["h"], face, refined=True, cfg=cfg)
         else:
-            self.subject = Subject(info["width"], info["height"], face)
+            self.subject = Subject(info["width"], info["height"], face, cfg=cfg)
         self.elements = motion.build(self.gfx, self.tl, self.duration)
         self.captions = motion.Captions(caption_events)
         self.sched = self.gfx.get("themes", [])
         self.default_theme = self.gfx.get("theme", "studio")
         self._bg, self._last = {}, (None, -9.0)
-        self.grain = fx.Grain(W, H, amount=float(cfg.get("short", {}).get("grain", 6.0)))
-        self.vig = fx.vignette(W, H, 0.34)
+        sc = cfg.get("short", {})
+        self.palette = str(sc.get("palette", "graphite"))
+        self.grain = fx.Grain(W, H, amount=float(sc.get("grain", 3.6)))
+        self.vig = fx.vignette(W, H, float(sc.get("vignette", 0.30)))
+        self.fin = {"halation": 0.05, "saturation": 0.94, **sc.get("finish", {})}
+        self.scrim = float(sc.get("caption_scrim", 0.42))
+        yy = np.linspace(0, 1, H, dtype=np.float32)
+        self.scrim_map = (fx.smooth01((yy - 0.60) / 0.40) ** 1.4)[:, None, None]      # darkens the bottom, where captions sit
         self.seg_start = self.tl.off
         self.seg_src = self.tl.src
         self.card_mask = np.zeros(len(talk), bool)
@@ -136,10 +175,13 @@ class Shorts:
                 return prev, tt + 0.05
         return None, None
 
-    def bg(self, theme, t):
+    def bg(self, theme, t, k=0):
         if theme not in self._bg:
-            self._bg[theme] = backgrounds.make(theme, BW, BH)
-        return cv2.resize(self._bg[theme].frame(t), (W, H), interpolation=cv2.INTER_CUBIC)
+            self._bg[theme] = backgrounds.make(theme, BW, BH, palette=self.palette)
+        return cv2.resize(self._bg[theme].frame(t, k), (W, H), interpolation=cv2.INTER_CUBIC)
+
+    def cut_index(self, t):
+        return max(0, int(np.searchsorted(self.seg_start, t, side="right")) - 1)
 
     def zoom_at(self, t, talk):
         """Alternating punch on every cut (hides the jump) plus a slow push-in inside each piece."""
@@ -175,35 +217,39 @@ class Shorts:
         talk = self.is_talk(t)
         card = self.is_card(t)
         zoom = self.zoom_at(t, talk)
+        k = self.cut_index(t)
         for e in self.elements:
             e.talk = talk or card
         if card:                                   # picture unusable: his words over the branded background
-            canvas = self.bg(self.theme_at(t), t)
+            canvas = self.bg(self.theme_at(t), t, k)
             for e in self.elements:
                 if e.alive(t):
                     e.back(canvas, t)
+            fx.finish(canvas, **self.fin)
         elif talk:
             theme = self.theme_at(t)
-            canvas = self.bg(theme, t)
+            canvas = self.bg(theme, t, k)
             prev, tc = self.theme_change(t, theme)
             if prev is not None:                                           # cross-fade between themes
-                k = (t - tc) / 0.4
-                canvas = canvas * k + self.bg(prev, t) * (1 - k)
+                x = (t - tc) / 0.4
+                canvas = canvas * x + self.bg(prev, t, k) * (1 - x)
             for e in self.elements:
                 if e.alive(t):
                     e.back(canvas, t)
-            blur = cv2.GaussianBlur(canvas, (0, 0), 16)
-            sub, a = self.subject.layer(rgb, alpha, zoom, blur)
+            sub, a = self.subject.layer(rgb, alpha, zoom, canvas)
             band = a[int(H * 0.20):int(H * 0.38), :, 0].max(axis=0) > 0.5     # where his head is, so stickers keep clear
             xs = np.flatnonzero(band)
             for e in self.elements:
                 e.avoid = (int(xs[0]), int(xs[-1])) if len(xs) else None
             canvas = sub * a + canvas * (1 - a)
+            fx.finish(canvas, **self.fin)
         else:
             canvas = self.subject.footage(rgb, zoom)
             for e in self.elements:
                 if e.alive(t):
                     e.back(canvas, t)
+            fx.finish(canvas, **{**self.fin, "halation": self.fin["halation"] * 0.5})
+        canvas *= 1 - (self.scrim * (1.0 if (talk or card) else 0.7)) * self.scrim_map
         for e in self.elements:
             if e.alive(t):
                 e.front(canvas, t)
@@ -382,7 +428,7 @@ def preview_frame(R, conform, alpha, t_edit, out_png, fps=None):
             corr = (float(cc[0]), float(cc[1]), float(cc[2]), float(cc[3]), float(sc.get("enhance", {}).get("stab_zoom", 1.07)))
         o, ao = enh.process(src, al, bool(R.talk[src_n]) if src_n < len(R.talk) else False, corr)
         rgb, a = o[:, :, ::-1].copy(), ao
-        R.subject = Subject(enh.tw, enh.th, R.subject.face, refined=True)
+        R.subject = Subject(enh.tw, enh.th, R.subject.face, refined=True, cfg=R.cfg)
     else:
         rgb = grab(conform, src_n, "bgr24", sw, sh)
         a = grab(alpha, src_n, "gray", sw, sh)

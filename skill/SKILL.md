@@ -43,6 +43,15 @@ the text. Tamil particles such as ஆ / ஏ are grammar, not fillers.
    file is kept) and rebuilds the plan; later `understand "<video>" --captions` fills English captions from
    the analysis. Only send a client's raw clip when the client has said yes (the user approved this for
    Nagarajan's clips on 2026-11-05).
+   Lessons from clip 2: (a) the Flash models are sometimes overloaded (503); `--model gemini-2.5-flash` or
+   another from `--list-models` retries, and every upload is deleted afterwards. (b) A model can answer
+   validly but on the wrong phrases (3.6 Flash gave P07 the sentence of P37, invented "EV/EBITDA" and a
+   line for a one-word phrase): put its English next to Whisper's Tamil for every phrase where two runs
+   disagree and trust the run whose English fits the Tamil. (c) A short phrase that Whisper heard no word in
+   (empty text) is dropped by the planner even when Gemini keeps it: add the word to `transcript.json`
+   (keep a backup) and run `run "<video>" --stop-after plan` again; the cue then exists too.
+   (d) `--captions` writes the whole phrase's English even where a `trim` removed its tail: edit
+   `captions_en.json` by hand and read it against the final cues.
 2. **Review the cuts**: `restarts "<video>"` prints every speech phrase (P#, times, text, `*` = cut) and
    every false-start candidate with its evidence (text coverage, audio similarity cost: repeats are
    usually 27-40, unrelated phrases ~50; TRUNCATED = cut off mid-word). Read ALL phrases, not just the
@@ -61,11 +70,15 @@ the text. Tamil particles such as ஆ / ஏ are grammar, not fillers.
    `translate "<video>" file.txt`. Cue ids are positional: if a re-plan adds or removes a phrase, remap the
    ids. Never invent what he did not say; flag unclear numbers to the user.
 5. **Graphics spec**: write `graphics.yaml` in the video's work folder (path printed by `restarts`;
-   worked examples in `examples/`). Times are SOURCE seconds. Choose: `theme`/`themes` (gold for gold,
-   golden ratio and money; market for price action; studio for calm), a `hook` (big word behind him +
-   two kicker lines), `stats` (sticker with a figure), `tags` (short statements), `cards` (words on the
-   background while the picture is unusable: one per `card` the footage check reports) and a `cta`. Every
-   figure must be one he said and one you can verify (on screen or in the transcript).
+   worked examples in `examples/`). Times are SOURCE seconds. Choose: `theme`/`themes` (they swap ONE
+   mid-layer of the same "After Hours" room: `market` = frosted glass with defocused price levels and one
+   price path, for price action and charts; `gold` = a brass banknote rosette, for money, valuation and
+   golden ratio; `studio` = light and haze only, for calm/mindset), a `hook` (`behind` = the small brass
+   kicker such as the ticker, `lines` = the two-line headline, `accent` = which line is brass), `stats`
+   (label: kicker, big figure, optional `sub`), `tags` (short statement on a label, above his head by
+   default), `cards` (words on the background while the picture is unusable: one per `card` the footage
+   check reports) and a `cta` (an italic serif question, a brass line, a quiet kicker). Every figure must be
+   one he said and one you can verify (on screen or in the transcript). Do not put detail where his head is.
 6. **Look before rendering**: `preview "<video>" 0.8 8.5 40` renders those edited-time seconds to PNG in
    the output folder. Open them and judge them honestly (hook legible? sticker off his face? caption
    readable? matte clean?). Fix and repeat.
@@ -123,5 +136,29 @@ no graphics spec. Fine for speed, not for quality.
 - Patching files from a shell heredoc: avoid backslashes (a `\n` becomes a real newline); use the file
   tools for anything containing them.
 - Pillow here has no Tamil shaping: on-screen text is English only.
-- Colours/fonts: gold on near-black, Anton + Montserrat ExtraBold + Playfair italic. The earlier navy/cyan
-  look was rejected as "AI-looking"; do not bring it back.
+- THE LOOK ("After Hours", rebuilt 2026-11-06 after the client said the old background was "like shit" for a
+  1 lakh edit). Rejected earlier, do not bring back: (1) the navy/cyan/grid/rounded-translucent-card look
+  ("AI-looking", round 1), (2) gold dust / sparkles / bokeh discs / light rays / scrolling candles on near-black
+  ("a simple animation"). A frosted-glass-card and navy version of this rebuild was built and thrown away for
+  being too close to (1). What ships: one calm room in warm graphite (#0A0A0B to #1E2328, no blue) with an amber
+  light low right, a faint slate fill left, a soft key streak from the top left, very fine slow haze (2.6%);
+  brass (#C9A15B) as the single accent, ivory (#EEF6FA) type. One world, one light, one slow camera: the
+  camera drifts and steps a little at every edit cut (like a multi-camera shoot). Every motion is slower than
+  1% of the width per second; nothing bounces or springs; type fades and slides. Overlays: letter-spaced
+  Montserrat kickers, ivory headlines (accent line in brass) in the headroom above his head, stat cards and
+  tags as solid near-black printed-looking labels with a brass hairline (sharp 8 px corners, no blur, no
+  pills), plain white captions with a soft shadow over a darkened bottom, an italic Playfair question for the
+  end card. No outlines, no tilt, no hard shadows. `short.palette: ink` switches to the blue-black variant;
+  `fx.Panel(frost=True)` is the frosted variant. Edit the look in `vedit/backgrounds.py`, `vedit/motion.py`,
+  `vedit/fx.py` (Panel, with_halo, finish). Themes swap one mid-layer: market (glass pane with defocused price
+  levels and one price path), gold (a brass banknote rosette), studio (light and haze only).
+- Setting him into the scene (`vedit/edge.py`, `Subject.layer` in `shorts.py`): the matte is made decisive
+  (lo 0.32 / hi 0.88, then 1 px feather) because the phone clip's matte trails a moving head as a translucent
+  band that shows the old room (a beige wooden wall!); edge pixels take their colour from inside him; skin-like
+  pixels are pulled toward a healthy brown (the phone lights one cheek blue-grey) while hair, whites of the
+  eyes and the hoodie are protected; hair edges are darkened; a little room light is wrapped onto the edge;
+  a rim light from the key; a soft shadow and a warm glow behind the shoulders; then a finishing grade, a
+  caption scrim, vignette and grain over everything. How to QA the edge: composite the cached layers over flat
+  magenta and mid-grey (`diag/matte_diag.py` style) at 1:1 on the frames where the head moves fastest, and look
+  at consecutive frames for flicker. Keep detail (price lines, rosette) away from his head: it fades out in an
+  ellipse around the head, otherwise a line "grows out of his hair".
