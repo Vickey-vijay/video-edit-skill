@@ -31,7 +31,21 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
 This creates the Python environment in `%USERPROFILE%\.video-edit-skill` (outside OneDrive),
-installs the Claude Code skill `nagarajan-video-edit`, and draws the B-roll cards.
+fetches the matting and super-resolution models (official releases, checked against pinned SHA-256
+hashes so every PC uses the exact same weights), installs the Claude Code skill
+`nagarajan-video-edit`, and draws the B-roll cards. The first transcription also downloads Whisper
+large-v3 (about 3 GB) by itself. Expect the first setup to take a while and a few GB of disk.
+
+**What carries over to another PC, and what does not**
+
+| Same on every PC | Depends on the PC / account |
+|---|---|
+| All the code, the look ("After Hours" graphite room, overlays, fonts), the settings in `config/default.yaml`, the model weights (hash-pinned) | An NVIDIA GPU: without one there is no super-resolution, the cut-out is slower and rougher, and the picture is visibly softer. About 6 GB of GPU memory was used here (RTX 3050); the render also needs NVENC (it falls back to CPU x264, much slower) |
+| Given the same cuts, captions and `graphics.yaml`, the render is deterministic (the background and grain are fixed functions of time), so `examples/itc-clip1` and `itc-clip2` reproduce the two reference reels up to encoder noise | A Gemini API key (`GEMINI_API_KEY`, or `Gemini_API`): it makes the keep/cut calls. A free key falls back to a Flash model and can differ from a paid Pro model; without a key use `understand --prompt-only` and Google AI Studio |
+| | The cuts, English captions and graphics for a NEW video are decided by the person's Claude following `skill/SKILL.md` (review the table, write captions, choose figures), so a different video is edited in the same style but not identically |
+
+The skill is for Claude Code (also the Code tab of the Claude desktop app) on that PC: it runs the
+commands and looks at the preview frames itself.
 
 ## Use
 

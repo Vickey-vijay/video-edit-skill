@@ -10,10 +10,24 @@ from .util import HOME, log, run
 MODEL_URL = "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx"
 
 
+# SHA-256 of the exact model the reference reels were made with: a download that differs is refused.
+SHA256 = "88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828"
+
+
 def model_path():
+    """The RVM model; fetched from the official release on first use (15 MB) and checked against the pinned hash."""
+    import hashlib
+    import urllib.request
     p = HOME / "models" / "rvm" / "rvm_mobilenetv3_fp32.onnx"
     if not p.exists():
-        raise FileNotFoundError(f"{p} is missing. Download it from {MODEL_URL}")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        log(f"downloading the person-matting model (official Robust Video Matting release, 15 MB) to {p} ...")
+        tmp = p.with_suffix(".part")
+        urllib.request.urlretrieve(MODEL_URL, tmp)
+        if hashlib.sha256(tmp.read_bytes()).hexdigest() != SHA256:
+            tmp.unlink()
+            raise RuntimeError(f"{p.name}: checksum mismatch, download removed. Fetch it by hand from {MODEL_URL}")
+        tmp.replace(p)
     return p
 
 

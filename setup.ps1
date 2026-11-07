@@ -41,6 +41,11 @@ $text = (Get-Content (Join-Path $Repo "skill\SKILL.md") -Raw -Encoding UTF8).Rep
 [System.IO.File]::WriteAllText((Join-Path $SkillDir "SKILL.md"), $text, (New-Object System.Text.UTF8Encoding $false))
 Write-Host "Skill installed: $SkillDir"
 
+# Fetch the matting and super-resolution models now (official releases, checksum-verified), so the first reel does not stop to
+# download them. Whisper large-v3 (about 3 GB) downloads by itself the first time a video is transcribed.
+$env:PYTHONPATH = $Repo
+& $vpy -c "from vedit import matte, enhance; matte.model_path(); enhance._weights('general'); enhance._weights('wdn'); print('models ready')"
+
 & $vpy -m vedit cards | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $Repo "inbox") | Out-Null
 Write-Host "Ready. Try:  .\vedit.cmd run `"C:\path\class.mp4`" --title `"Harmonic Patterns`""

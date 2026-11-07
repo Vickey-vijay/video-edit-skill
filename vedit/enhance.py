@@ -27,7 +27,10 @@ WEIGHTS = {
     "general": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",
     "wdn": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth",
 }
-SHA256 = {}          # filled in below once verified against the official release
+SHA256 = {           # the exact official weights the reference reels were made with; anything else is refused
+    "general": "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292",
+    "wdn": "1641f8c4464b9f097c9fdda5589273713f67cf59f3d909e0bd688f0cee269dca",
+}
 VERSION = 4
 
 
